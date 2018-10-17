@@ -8,40 +8,46 @@ namespace PersistentHashing
 {
     public unsafe class FixedSizeRobinHoodPersistentHashTable<TKey, TValue>: IDisposable where TKey:unmanaged where TValue:unmanaged
     {
-        // <key><value-padding><value><distance padding><distance16><record-padding>
+        // <key><value-padding><value><distance padding><distance16><slot-padding>
 
         uint keyOffset;
         uint valueOffset;
         uint distanceOffset;
-
-        bool isAligned;
+        readonly bool isAligned;
 
         uint keySize;
         uint valueSize;
         uint distanceSize;
         uint recordSize;
-        ulong slots;
-        ulong mask;
+        readonly ulong slotCount;
+        readonly ulong mask;
 
         private MemoryMapper memoryMapper;
         private MemoryMappingSession mappingSession;
         private byte* fileBaseAddress;
 
         private FixedSizeRobinHoodHashTableFileHeader* headerPointer;
-        private byte* tablePointer;
-        private byte* endTablePointer;
+        private readonly byte* tablePointer;
+        private readonly byte* endTablePointer;
+        private readonly int bits;
 
+        public int MaxDistance { get; private set; }
+
+        private readonly Func<TKey, ulong> hashFunction;
+        
 
         private const int AllocationGranularity = 64 * 1024;
 
-        public FixedSizeRobinHoodPersistentHashTable(string filePath, long capacity, bool isAligned = false)
+        public FixedSizeRobinHoodPersistentHashTable(string filePath, long capacity, Func<TKey, ulong> hashFunction = null,  bool isAligned = false)
         {
             this.isAligned = isAligned;
+            this.hashFunction = hashFunction;
             CalculateOffsetsAndSizes();
-            slots = (ulong) Bits.NextPowerOf2(capacity);
-            mask = (ulong) slots - 1UL;
+            slotCount = (ulong) Bits.NextPowerOf2(capacity);
+            mask = (ulong) slotCount - 1UL;
+            bits = Bits.MostSignificantBit(slotCount);
 
-            var fileSize = (ulong) sizeof(FixedSizeRobinHoodHashTableFileHeader) +  slots * recordSize;
+            var fileSize = (ulong) sizeof(FixedSizeRobinHoodHashTableFileHeader) +  slotCount * recordSize;
             fileSize += (AllocationGranularity - (fileSize & (AllocationGranularity - 1))) & (AllocationGranularity - 1);
 
             var isNew = !File.Exists(filePath);
@@ -59,60 +65,68 @@ namespace PersistentHashing
             else
             {
                 ValidateHeader();
-                slots = headerPointer->Slots;
+                slotCount = headerPointer->Slots;
             }
             tablePointer = fileBaseAddress + sizeof(FixedSizeRobinHoodHashTableFileHeader);
-            endTablePointer = tablePointer + recordSize * slots;
+            endTablePointer = tablePointer + recordSize * slotCount;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        byte *GetRecordPointer(ulong recordIndex)
+        byte* GetRecordPointer(ulong slotIndex) => 
+            tablePointer + recordSize * slotIndex;
+
+        /// <summary>
+        /// Returns the distance + 1 to the ideal slot index.
+        /// The ideal slot index is the slot index where the hash maps to.
+        /// distance == 0 means the slot is free. distance > 0 means the slot is occupied
+        /// The distance is incremented by 1 to reserve zero value as free slot.
+        /// </summary>
+        /// <param name="recordPointer"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        ushort GetDistance(byte* recordPointer) => 
+            *(ushort*)(recordPointer + distanceOffset);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void SetDistance(byte* recordPointer, ushort distance)
         {
-            return tablePointer + recordSize * recordIndex;
+            *(ushort*)(recordPointer + distanceOffset) = distance;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ushort GetDistance(byte* recordPointer)
+        void SetKey(byte* recordPointer, TKey key)
         {
-            return *(ushort*)(recordPointer + distanceOffset);
+            *(TKey*)(recordPointer + keyOffset) = key;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        byte* GetKeyPointer(byte* recordPointer)
+        void SetValue(byte* recordPointer, TValue value)
         {
-            return recordPointer + keyOffset;
+            *(TValue*)(recordPointer + valueOffset) = value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ReadOnlySpan<byte> GetKeyAsSpan(byte* keyPointer)
-        {
-            return new ReadOnlySpan<byte>(keyPointer, (int)keySize);
-        }
+        byte* GetKeyPointer(byte* recordPointer) => 
+            recordPointer + keyOffset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        TKey GetKey(byte* keyPointer)
-        {
-            return *(TKey*)keyPointer;
-            //return Unsafe.AsRef<TKey>(keyPointer);
-        }
+        ReadOnlySpan<byte> GetKeyAsSpan(byte* keyPointer) => 
+            new ReadOnlySpan<byte>(keyPointer, (int)keySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        byte* GetValuePointer(byte* recordPointer)
-        {
-            return recordPointer + valueOffset;
-        }
+        static TKey GetKey(byte* keyPointer) => 
+            *(TKey*)keyPointer;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ReadOnlySpan<byte> GetValueAsSpan(byte *valuePointer)
-        {
-            return new ReadOnlySpan<byte>(valuePointer, (int)valueSize);
-        }
+        byte* GetValuePointer(byte* recordPointer) => 
+            recordPointer + valueOffset;
 
-        TValue GetValue(byte* valuePointer)
-        {
-            return *(TValue*)valuePointer;
-            //return Unsafe.AsRef<TValue>(valuePointer);
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        ReadOnlySpan<byte> GetValueAsSpan(byte *valuePointer) => 
+            new ReadOnlySpan<byte>(valuePointer, (int)valueSize);
+
+        static TValue GetValue(byte* valuePointer) => 
+            *(TValue*)valuePointer;
 
         void WriteHeader()
         {
@@ -124,7 +138,7 @@ namespace PersistentHashing
             headerPointer->Reserved[0] = 0;
             headerPointer->Reserved[1] = 0;
             headerPointer->Reserved[2] = 0;
-            headerPointer->Slots = slots;
+            headerPointer->Slots = slotCount;
             headerPointer->ValueSize = valueSize;
         }
 
@@ -148,59 +162,62 @@ namespace PersistentHashing
             }
             if (headerPointer->RecordSize != recordSize)
             {
-                throw new ArgumentException("Mismatched RecordSize");
+                throw new ArgumentException("Mismatched SlotSize");
             }
         }
 
         private void CalculateOffsetsAndSizes()
         {
-            keySize = (uint) Unsafe.SizeOf<TKey>();
-            valueSize = (uint) Unsafe.SizeOf<TValue>();
-            distanceSize = (uint) Unsafe.SizeOf<ushort>();
+            keySize = (uint) sizeof(TKey);
+            valueSize = (uint) sizeof(TValue);
+            distanceSize = sizeof(ushort);
 
 
-            byte keyAlignement = GetAlignement((uint)Unsafe.SizeOf<TKey>());
-            byte valueAlignement = GetAlignement((uint)Unsafe.SizeOf<TValue>());
-            byte distanceAlignement = GetAlignement((uint)Unsafe.SizeOf<ushort>());
-            byte recordAlignement = Math.Max(distanceAlignement, Math.Max(keyAlignement, valueAlignement));
+            uint keyAlignement = GetAlignement(keySize);
+            uint valueAlignement = GetAlignement(valueSize);
+            uint distanceAlignement = GetAlignement(distanceSize);
+            uint slotAlignement = Math.Max(distanceAlignement, Math.Max(keyAlignement, valueAlignement));
 
             keyOffset = 0;
             valueOffset = keyOffset + keySize + GetPadding(keyOffset + keySize, valueAlignement);
             distanceOffset = valueOffset + valueSize + GetPadding(valueOffset + valueSize, distanceAlignement);
-            recordSize = distanceOffset + distanceSize + GetPadding(distanceOffset + distanceSize, recordAlignement);
-            
+            recordSize = distanceOffset + distanceSize + GetPadding(distanceOffset + distanceSize, slotAlignement);
         }
 
-        private uint GetPadding(uint offsetWithoutPadding, byte alignement)
+        private uint GetPadding(uint offsetWithoutPadding, uint alignement)
         {
             if (!isAligned) return 0u;
-            uint twoPowerAlignement = 1u << alignement;
-            uint twoPowerAlignementMinusOne = twoPowerAlignement - 1;
-            // (2^alignement - (offsetWithoutPaddig) & (2^alignement - 1))) & (2^alignement -1)
-            return (twoPowerAlignement - (offsetWithoutPadding & twoPowerAlignementMinusOne)) & twoPowerAlignementMinusOne;
-
+            uint alignementMinusOne = alignement - 1u;
+            // (alignement - offsetWithoutPadding % alignement) % alignement
+            return (alignement - (offsetWithoutPadding & alignementMinusOne)) & alignementMinusOne;
         }
 
-        private byte GetAlignement(uint size)
+        private uint GetAlignement(uint size)
         {
-            if (!isAligned) return 0;
-            if (size >= 8) return 3;
-            if (size >= 4) return 2;
-            if (size >= 2) return 1;
-            return 0;
+            if (!isAligned) return 1u;
+            if (size >= 8u) return 8u;
+            if (size >= 4u) return 4u;
+            if (size >= 2u) return 2u;
+            return 1u;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private ulong GetIdealRecordIndex(TKey key)
+        private ulong GetIdealSlotIndex(TKey key)
         {
-            var hash = Hashing.MetroHash64((byte*)Unsafe.AsPointer(ref key), keySize);
-            return hash & mask;
+            if (hashFunction == null)
+            {
+                return Hashing.FastHash64((byte*)&key, keySize) & mask;
+            }
+            else
+            {
+                return hashFunction(key) * 11400714819323198485LU & mask;
+            }
         }
 
         public bool TryGet(TKey key, out TValue value)
         {
-            var idealRecordIndex = GetIdealRecordIndex(key);
-            var recordPointer = FindRecordPointer(idealRecordIndex, key);
+            var idealSlotIndex = GetIdealSlotIndex(key);
+            var recordPointer = FindRecordPointer(idealSlotIndex, key);
             if (recordPointer == null)
             {
                 value = default;
@@ -212,11 +229,11 @@ namespace PersistentHashing
 
         public void Add(TKey key, TValue value)
         {
-            var idealRecordIndex = GetIdealRecordIndex(key);
-            var recordPointer = FindRecordPointer(idealRecordIndex, key);
+            var idealSlotIndex = GetIdealSlotIndex(key);
+            var recordPointer = FindRecordPointer(idealSlotIndex, key);
             if (recordPointer == null)
             {
-                Add(idealRecordIndex, key, value);
+                RobinHoodAdd(idealSlotIndex, key, value);
             }
             else
             {
@@ -226,11 +243,11 @@ namespace PersistentHashing
 
         public void Put(TKey key, TValue value)
         {
-            var idealRecordIndex = GetIdealRecordIndex(key);
-            var recordPointer = FindRecordPointer(idealRecordIndex, key);
+            var idealSlotIndex = GetIdealSlotIndex(key);
+            var recordPointer = FindRecordPointer(idealSlotIndex, key);
             if (recordPointer == null)
             {
-                Add(idealRecordIndex, key, value);
+                RobinHoodAdd(idealSlotIndex, key, value);
             }
             else
             {
@@ -239,16 +256,51 @@ namespace PersistentHashing
             }
         }
 
-        private void Add(ulong idealRecordIndex, TKey key, TValue value)
+        private void RobinHoodAdd(ulong idealSlotIndex, TKey key, TValue value)
         {
-            throw new NotImplementedException();
+            byte* recordPointer = GetRecordPointer(idealSlotIndex);
+            ushort distance = 1; //start with 1 because 0 is reserved for free slots.
+            while (true)
+            {
+                ushort currentRecordDistance = GetDistance(recordPointer);
+                if (currentRecordDistance == 0)
+                {
+                    SetKey(recordPointer, key);
+                    SetValue(recordPointer, value);
+                    SetDistance(recordPointer, distance);
+                    if (MaxDistance < distance) MaxDistance = distance;
+                    return;
+                }
+                else if (currentRecordDistance < distance)
+                {
+                    /* Swap Robin Hood style */
+                    TKey tempKey = GetKey(GetKeyPointer(recordPointer));
+                    TValue tempValue = GetValue(GetValuePointer(recordPointer));
+                    SetKey(recordPointer, key);
+                    SetValue(recordPointer, value);
+                    SetDistance(recordPointer, distance);
+                    key = tempKey;
+                    value = tempValue;
+                    distance = currentRecordDistance;
+                }
+                distance++;
+                if (distance > 10_000)
+                {
+                    throw new InvalidOperationException("Reached max distance");
+                }
+                recordPointer += recordSize;
+                if (recordPointer >= endTablePointer)
+                {
+                    recordPointer = tablePointer;
+                }
+            }
         }
 
-        private byte* FindRecordPointer(ulong idealRecordIndex, TKey key)
+        private byte* FindRecordPointer(ulong idealSlotIndex, TKey key)
         {
-            var recordPointer = GetRecordPointer(idealRecordIndex);
-            var keyPointer = Unsafe.AsPointer(ref key);
-            do
+            byte* recordPointer = GetRecordPointer(idealSlotIndex);
+            byte* keyPointer = (byte*) &key;
+            while (true)
             {
                 if (GetDistance(recordPointer) == 0) return null;
                 if (Memory.Compare(keyPointer, GetKeyPointer(recordPointer), (int) keySize) == 0)
@@ -256,8 +308,11 @@ namespace PersistentHashing
                     return recordPointer;
                 }
                 recordPointer += recordSize;
-            } while (recordPointer < endTablePointer);
-            return null;
+                if (recordPointer >= endTablePointer)
+                {
+                    recordPointer = tablePointer;
+                }
+            }
         }
 
         public bool IsDisposed { get; private set; }
@@ -268,6 +323,11 @@ namespace PersistentHashing
             IsDisposed = true;
             if (this.mappingSession != null) this.mappingSession.Dispose();
             if (this.memoryMapper != null) this.memoryMapper.Dispose();
+        }
+
+        public void Flush()
+        {
+            this.memoryMapper.Flush();
         }
     }
 }

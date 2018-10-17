@@ -6,7 +6,7 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    public class Hashing
+    public partial class Hashing
     {
 
         public static int Fnv1a(ReadOnlySpan<byte> key, int seed = 0)
