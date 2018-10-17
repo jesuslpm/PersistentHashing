@@ -3,18 +3,34 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.28010.2046
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersistentHashing", "PersistentHashing\PersistentHashing.csproj", "{5C853884-1E27-422D-B479-411D4DDCD16A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PersistentHashing", "PersistentHashing\PersistentHashing.csproj", "{5C853884-1E27-422D-B479-411D4DDCD16A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InformalTests", "InformalTests\InformalTests.csproj", "{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{5C853884-1E27-422D-B479-411D4DDCD16A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5C853884-1E27-422D-B479-411D4DDCD16A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5C853884-1E27-422D-B479-411D4DDCD16A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5C853884-1E27-422D-B479-411D4DDCD16A}.Debug|x64.Build.0 = Debug|Any CPU
 		{5C853884-1E27-422D-B479-411D4DDCD16A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5C853884-1E27-422D-B479-411D4DDCD16A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5C853884-1E27-422D-B479-411D4DDCD16A}.Release|x64.ActiveCfg = Release|Any CPU
+		{5C853884-1E27-422D-B479-411D4DDCD16A}.Release|x64.Build.0 = Release|Any CPU
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Debug|x64.ActiveCfg = Debug|x64
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Debug|x64.Build.0 = Debug|x64
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Release|x64.ActiveCfg = Release|x64
+		{ABE85B2C-FB61-43CC-8F5A-B9807A78B002}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

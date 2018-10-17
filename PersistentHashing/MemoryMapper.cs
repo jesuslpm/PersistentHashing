@@ -52,6 +52,7 @@ namespace PersistentHashing
         {
             if (isDisposed) return;
             isDisposed = true;
+            this.FlushInternal();
             mapping.Release();
             fs.Dispose();
         }
@@ -80,11 +81,16 @@ namespace PersistentHashing
             return new MemoryMappingSession(this);
         }
 
+        private void FlushInternal()
+        {
+            mapping.Flush();
+            fs.Flush(true);
+        }
+
         public void Flush()
         {
             CheckDisposed();
-            mapping.Flush();
-            fs.Flush(true);
+            FlushInternal();
         }
     }
 }
