@@ -27,7 +27,7 @@ namespace PersistentHashing
     public partial class Hashing
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static ulong FastHashMix(ulong h)
+        public static ulong FastHashMix(ulong h)
         {
             h ^= h >> 23;
             h *= 0x2127599bf4325c37UL;

@@ -34,14 +34,16 @@ namespace PersistentHashing
         public int MaxDistance { get; private set; }
 
         private readonly Func<TKey, ulong> hashFunction;
+        private readonly IEqualityComparer<TKey> comparer;
         
 
         private const int AllocationGranularity = 64 * 1024;
 
-        public FixedSizeRobinHoodPersistentHashTable(string filePath, long capacity, Func<TKey, ulong> hashFunction = null,  bool isAligned = false)
+        public FixedSizeRobinHoodPersistentHashTable(string filePath, long capacity, Func<TKey, ulong> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
         {
             this.isAligned = isAligned;
             this.hashFunction = hashFunction;
+            this.comparer = comparer ?? EqualityComparer<TKey>.Default;
             CalculateOffsetsAndSizes();
             slotCount = (ulong) Bits.NextPowerOf2(capacity);
             mask = (ulong) slotCount - 1UL;
@@ -217,7 +219,7 @@ namespace PersistentHashing
         public bool TryGet(TKey key, out TValue value)
         {
             var idealSlotIndex = GetIdealSlotIndex(key);
-            var recordPointer = FindRecordPointer(idealSlotIndex, key);
+            var recordPointer = FindRecord(idealSlotIndex, key);
             if (recordPointer == null)
             {
                 value = default;
@@ -230,7 +232,7 @@ namespace PersistentHashing
         public void Add(TKey key, TValue value)
         {
             var idealSlotIndex = GetIdealSlotIndex(key);
-            var recordPointer = FindRecordPointer(idealSlotIndex, key);
+            var recordPointer = FindRecord(idealSlotIndex, key);
             if (recordPointer == null)
             {
                 RobinHoodAdd(idealSlotIndex, key, value);
@@ -244,7 +246,7 @@ namespace PersistentHashing
         public void Put(TKey key, TValue value)
         {
             var idealSlotIndex = GetIdealSlotIndex(key);
-            var recordPointer = FindRecordPointer(idealSlotIndex, key);
+            var recordPointer = FindRecord(idealSlotIndex, key);
             if (recordPointer == null)
             {
                 RobinHoodAdd(idealSlotIndex, key, value);
@@ -296,21 +298,23 @@ namespace PersistentHashing
             }
         }
 
-        private byte* FindRecordPointer(ulong idealSlotIndex, TKey key)
+        private byte* FindRecord(ulong idealSlotIndex, TKey key)
         {
             byte* recordPointer = GetRecordPointer(idealSlotIndex);
-            byte* keyPointer = (byte*) &key;
+            bool isEndTableReached = false;
             while (true)
             {
                 if (GetDistance(recordPointer) == 0) return null;
-                if (Memory.Compare(keyPointer, GetKeyPointer(recordPointer), (int) keySize) == 0)
+                if (comparer.Equals(key, GetKey(GetKeyPointer(recordPointer))))
                 {
                     return recordPointer;
                 }
                 recordPointer += recordSize;
                 if (recordPointer >= endTablePointer)
                 {
+                    if (isEndTableReached) return null;
                     recordPointer = tablePointer;
+                    isEndTableReached = true;
                 }
             }
         }
