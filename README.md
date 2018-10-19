@@ -20,6 +20,8 @@ Hash tables will have different features and constraints:
 The plan is start with a single threaded persistent hash table using Robin Hood Hashing with fixed capacity,
 key size and value size, and end with a concurrent persistent hash table with variable capacity and sizes.
 
+It's not planned to make them crash proof.
+
 # FixedSizeRobinHoodPersistentHashTable<TKey, TValue>
 
 This is the most basic persistent hash table. It uses Robin Hood Hashing. It's capacity, key size and value size are fixed.
