@@ -17,7 +17,7 @@ Hash tables will have different features and constraints:
   * Single threaded.
   * Concurrent.
 
-The plan is start with a single threaded persistent hash table using Robin Hood Hashing with fixed capacity,
+The plan is starting with a single threaded persistent hash table using Robin Hood Hashing with fixed capacity,
 key size and value size, and end with a concurrent persistent hash table with variable capacity and sizes.
 
 It's not planned to make them crash proof.
