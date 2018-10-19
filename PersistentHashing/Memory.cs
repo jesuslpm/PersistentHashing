@@ -4,6 +4,11 @@ using System.Text;
 
 namespace PersistentHashing
 {
+    /*
+    * Code in this class is taken from RavenDB, https://github.com/ravendb/ravendb
+    * which is licensed as AGPLv3, https://github.com/ravendb/ravendb/blob/v4.1/LICENSE
+    * Permission to use this code is pending.
+    */
     public class Memory
     {
         

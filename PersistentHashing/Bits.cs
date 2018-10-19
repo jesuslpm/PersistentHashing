@@ -5,6 +5,11 @@ using System.Text;
 
 namespace PersistentHashing
 {
+    /*
+     * This class is taken from RavenDB, https://github.com/ravendb/ravendb
+     * which is licensed as AGPLv3, https://github.com/ravendb/ravendb/blob/v4.1/LICENSE
+     * Permission to use this code is pending.
+     */
     public static class Bits
     {
         //https://stackoverflow.com/questions/2709430/count-number-of-bits-in-a-64-bit-long-big-integer
