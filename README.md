@@ -29,35 +29,41 @@ It's roughly as fast as `Dictionary<TKey, TValue>` while being persisted and mor
 
 The following line of code:
 
-`
+```<language>
 var dic = new Dictionary<long, long>(200_000_000);
-` 
+```
 
 Throws OutOfMemofyException in my computer. However the following does not:
 
-`
+
+```<language>
 var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, 200_000_000);
-`
+```
+
+
 
 Here you have some benchmarks results comparing `Dictionary` and `FixedSizeRobinHoodPersistentHashTable`:
 
 
-`
-Dictionary sequential access benchmark
-Added 10,000,000 items to Dictionary in 00:00:00.1778698
+```<language>
+> Dictionary sequential access benchmark
+> Added 10,000,000 items to Dictionary in 00:00:00.1778698
+> 
+> Dictionary random access benchmark
+> Added 10,000,000 items to Dictionary in 00:00:02.2427423
+> 
+> HashTable sequencial access benchmark
+> Added 10,000,000 items to HashTable in 00:00:00.2956129
+> HashTable MaxDistance:  1
+> HashTable flushed in 00:00:00.3712881
+> Read 10,000,000 items from HashTable in 00:00:00.2086666
+> 
+> HashTable random access benchmark
+> Added 10,000,000 items to HashTable in 00:00:02.1242235
+> HashTable MaxDistance:  11
+> HashTable flushed in 00:00:00.6129888
+> Read 10,000,000 items from HashTable in 00:00:01.4045045
+```
 
-Dictionary random access benchmark
-Added 10,000,000 items to Dictionary in 00:00:02.2427423
 
-HashTable sequencial access benchmark
-Added 10,000,000 items to HashTable in 00:00:00.2956129
-HashTable MaxDistance:  1
-HashTable flushed in 00:00:00.3712881
-Read 10,000,000 items from HashTable in 00:00:00.2086666
 
-HashTable random access benchmark
-Added 10,000,000 items to HashTable in 00:00:02.1242235
-HashTable MaxDistance:  11
-HashTable flushed in 00:00:00.6129888
-Read 10,000,000 items from HashTable in 00:00:01.4045045
-`
