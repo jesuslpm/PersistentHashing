@@ -1,5 +1,5 @@
 # PersistentHashing
-Persistent Hash Tables based on Memory Mapped Files
+Persistent Hash Tables backed by Memory Mapped Files
 
 This library will contain a collection of classes that will implement
 persistent hash tables. 
@@ -25,7 +25,7 @@ key size and value size, and end with a concurrent persistent hash table with va
 This is the most basic persistent hash table. It uses Robin Hood Hashing. It's capacity, key size and value size are fixed.
 `TKey` and `TValue` are value types, they must not be reference types and must not contain any reference type members at any level of nesting.
 
-It's roughly as fast as `Dictionary<TKey, TValue>` while being persisted and more memory efficient.
+It's roughly as fast as `Dictionary<TKey, TValue>` while being persistent and memory efficient.
 
 The following line of code:
 
