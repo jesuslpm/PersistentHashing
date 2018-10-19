@@ -10,17 +10,17 @@ namespace PersistentHashing
     {
         // <key><value-padding><value><distance padding><distance16><slot-padding>
 
-        uint keyOffset;
-        uint valueOffset;
-        uint distanceOffset;
+        int keyOffset;
+        int valueOffset;
+        int distanceOffset;
         readonly bool isAligned;
 
-        uint keySize;
-        uint valueSize;
-        uint distanceSize;
-        uint recordSize;
-        readonly ulong slotCount;
-        readonly ulong mask;
+        int keySize;
+        int valueSize;
+        int distanceSize;
+        int recordSize;
+        readonly long slotCount;
+        readonly long mask;
 
         private MemoryMapper memoryMapper;
         private MemoryMappingSession mappingSession;
@@ -33,23 +33,23 @@ namespace PersistentHashing
 
         public int MaxDistance { get; private set; }
 
-        private readonly Func<TKey, ulong> hashFunction;
+        private readonly Func<TKey, long> hashFunction;
         private readonly IEqualityComparer<TKey> comparer;
         
 
         private const int AllocationGranularity = 64 * 1024;
 
-        public FixedSizeRobinHoodPersistentHashTable(string filePath, long capacity, Func<TKey, ulong> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
+        public FixedSizeRobinHoodPersistentHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
         {
             this.isAligned = isAligned;
             this.hashFunction = hashFunction;
             this.comparer = comparer ?? EqualityComparer<TKey>.Default;
             CalculateOffsetsAndSizes();
-            slotCount = (ulong) Bits.NextPowerOf2(capacity);
-            mask = (ulong) slotCount - 1UL;
+            slotCount = (long) Bits.NextPowerOf2(capacity);
+            mask = (long) slotCount - 1L;
             bits = Bits.MostSignificantBit(slotCount);
 
-            var fileSize = (ulong) sizeof(FixedSizeRobinHoodHashTableFileHeader) +  slotCount * recordSize;
+            var fileSize = (long) sizeof(FixedSizeRobinHoodHashTableFileHeader) +  slotCount * recordSize;
             fileSize += (AllocationGranularity - (fileSize & (AllocationGranularity - 1))) & (AllocationGranularity - 1);
 
             var isNew = !File.Exists(filePath);
@@ -74,7 +74,7 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        byte* GetRecordPointer(ulong slotIndex) => 
+        byte* GetRecordPointer(long slotIndex) => 
             tablePointer + recordSize * slotIndex;
 
         /// <summary>
@@ -86,13 +86,13 @@ namespace PersistentHashing
         /// <param name="recordPointer"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ushort GetDistance(byte* recordPointer) => 
-            *(ushort*)(recordPointer + distanceOffset);
+        short GetDistance(byte* recordPointer) => 
+            *(short*)(recordPointer + distanceOffset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SetDistance(byte* recordPointer, ushort distance)
+        void SetDistance(byte* recordPointer, short distance)
         {
-            *(ushort*)(recordPointer + distanceOffset) = distance;
+            *(short*)(recordPointer + distanceOffset) = distance;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -170,15 +170,15 @@ namespace PersistentHashing
 
         private void CalculateOffsetsAndSizes()
         {
-            keySize = (uint) sizeof(TKey);
-            valueSize = (uint) sizeof(TValue);
-            distanceSize = sizeof(ushort);
+            keySize = (int) sizeof(TKey);
+            valueSize = (int) sizeof(TValue);
+            distanceSize = sizeof(short);
 
 
-            uint keyAlignement = GetAlignement(keySize);
-            uint valueAlignement = GetAlignement(valueSize);
-            uint distanceAlignement = GetAlignement(distanceSize);
-            uint slotAlignement = Math.Max(distanceAlignement, Math.Max(keyAlignement, valueAlignement));
+            int keyAlignement = GetAlignement(keySize);
+            int valueAlignement = GetAlignement(valueSize);
+            int distanceAlignement = GetAlignement(distanceSize);
+            int slotAlignement = Math.Max(distanceAlignement, Math.Max(keyAlignement, valueAlignement));
 
             keyOffset = 0;
             valueOffset = keyOffset + keySize + GetPadding(keyOffset + keySize, valueAlignement);
@@ -186,25 +186,25 @@ namespace PersistentHashing
             recordSize = distanceOffset + distanceSize + GetPadding(distanceOffset + distanceSize, slotAlignement);
         }
 
-        private uint GetPadding(uint offsetWithoutPadding, uint alignement)
+        private int GetPadding(int offsetWithoutPadding, int alignement)
         {
-            if (!isAligned) return 0u;
-            uint alignementMinusOne = alignement - 1u;
+            if (!isAligned) return 0;
+            int alignementMinusOne = alignement - 1;
             // (alignement - offsetWithoutPadding % alignement) % alignement
             return (alignement - (offsetWithoutPadding & alignementMinusOne)) & alignementMinusOne;
         }
 
-        private uint GetAlignement(uint size)
+        private int GetAlignement(int size)
         {
-            if (!isAligned) return 1u;
-            if (size >= 8u) return 8u;
-            if (size >= 4u) return 4u;
-            if (size >= 2u) return 2u;
-            return 1u;
+            if (!isAligned) return 1;
+            if (size >= 8) return 8;
+            if (size >= 4) return 4;
+            if (size >= 2) return 2;
+            return 1;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private ulong GetIdealSlotIndex(TKey key)
+        private long GetIdealSlotIndex(TKey key)
         {
             if (hashFunction == null)
             {
@@ -279,13 +279,13 @@ namespace PersistentHashing
             }
         }
 
-        private void RobinHoodAdd(ulong idealSlotIndex, TKey key, TValue value)
+        private void RobinHoodAdd(long idealSlotIndex, TKey key, TValue value)
         {
             byte* recordPointer = GetRecordPointer(idealSlotIndex);
-            ushort distance = 1; //start with 1 because 0 is reserved for free slots.
+            short distance = 1; //start with 1 because 0 is reserved for free slots.
             for (;;)
             {
-                ushort currentRecordDistance = GetDistance(recordPointer);
+                short currentRecordDistance = GetDistance(recordPointer);
                 if (currentRecordDistance == 0) // found free slot
                 {
                     SetKey(recordPointer, key);
@@ -319,7 +319,7 @@ namespace PersistentHashing
             }
         }
 
-        private byte* FindRecord(ulong idealSlotIndex, TKey key)
+        private byte* FindRecord(long idealSlotIndex, TKey key)
         {
             byte* recordPointer = GetRecordPointer(idealSlotIndex);
             bool isEndTableReached = false;

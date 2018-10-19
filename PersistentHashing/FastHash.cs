@@ -35,37 +35,46 @@ namespace PersistentHashing
             return h;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe long FastHash64(byte* buffer, int length, long seed= 0)
+        {
+            return unchecked(FastHash64(buffer, length, seed));
+        }
+
         public static unsafe ulong FastHash64(byte* buffer, uint length, ulong seed=0)
         {
-            const ulong m = 0x880355f21e6d1965UL;
-            ulong* pos = (ulong*)buffer;
-            ulong* end = pos + (length / 8);
-            byte* pos2;
-            ulong h = seed ^ (length * m);
-            ulong v;
-            while (pos != end)
+            unchecked
             {
-                v = *pos++;
-                h ^= FastHashMix(v);
-                h *= m;
-            }
-            pos2 = (byte*)pos;
-            v = 0;
-            switch (length & 7)
-            {
-                case 7: v ^= (ulong)pos2[6] << 48; goto case 6;
-                case 6: v ^= (ulong)pos2[5] << 40; goto case 5;
-                case 5: v ^= (ulong)pos2[4] << 32; goto case 4;
-                case 4: v ^= (ulong)pos2[3] << 24; goto case 3;
-                case 3: v ^= (ulong)pos2[2] << 16; goto case 2;
-                case 2: v ^= (ulong)pos2[1] << 8; goto case 1;
-                case 1:
-                    v ^= (ulong)pos2[0];
+                const ulong m = 0x880355f21e6d1965UL;
+                ulong* pos = (ulong*)buffer;
+                ulong* end = pos + (length / 8);
+                byte* pos2;
+                ulong h = seed ^ (length * m);
+                ulong v;
+                while (pos != end)
+                {
+                    v = *pos++;
                     h ^= FastHashMix(v);
                     h *= m;
-                    break;
+                }
+                pos2 = (byte*)pos;
+                v = 0;
+                switch (length & 7)
+                {
+                    case 7: v ^= (ulong)pos2[6] << 48; goto case 6;
+                    case 6: v ^= (ulong)pos2[5] << 40; goto case 5;
+                    case 5: v ^= (ulong)pos2[4] << 32; goto case 4;
+                    case 4: v ^= (ulong)pos2[3] << 24; goto case 3;
+                    case 3: v ^= (ulong)pos2[2] << 16; goto case 2;
+                    case 2: v ^= (ulong)pos2[1] << 8; goto case 1;
+                    case 1:
+                        v ^= (ulong)pos2[0];
+                        h ^= FastHashMix(v);
+                        h *= m;
+                        break;
+                }
+                return FastHashMix(h);
             }
-            return FastHashMix(h);
         }
 
         public static unsafe uint FastHash32(byte* buffer, uint length, ulong seed = 0)

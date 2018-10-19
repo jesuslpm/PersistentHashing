@@ -125,7 +125,7 @@ namespace InformalTests
             if (File.Exists(filePath)) File.Delete(filePath);
 
             var rnd = new Random(0);
-            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, (key) => (ulong)(key), null, false))
+            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, key => key, null, false))
             {
                 yield return "HashTable random access benchmark";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) =>
@@ -154,7 +154,7 @@ namespace InformalTests
             //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, (key) => (ulong)(key), null, false))
+            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, key => key, null, false))
             {
                 yield return "HashTable sequencial access benchmark";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => hashTable.Add(i, i));
@@ -170,7 +170,7 @@ namespace InformalTests
 
 
 
-        static IEnumerable<string> BenchmarkHashTable(Func<long, ulong> hashFunction, Action<FixedSizeRobinHoodPersistentHashTable<long, long>, int> addAction)
+        static IEnumerable<string> BenchmarkHashTable(Func<long, long> hashFunction, Action<FixedSizeRobinHoodPersistentHashTable<long, long>, int> addAction)
         {
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
