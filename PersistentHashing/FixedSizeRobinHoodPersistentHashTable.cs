@@ -212,7 +212,8 @@ namespace PersistentHashing
             }
             else
             {
-                return hashFunction(key) * 11400714819323198485LU & mask;
+                //return hashFunction(key) * 11400714819323198485LU & mask;
+                return hashFunction(key) & mask;
             }
         }
 

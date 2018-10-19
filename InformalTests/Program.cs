@@ -16,7 +16,8 @@ namespace InformalTests
 
         static void Main(string[] args)
         {
-            SynchonizedOperationTest();
+            test();
+            test();
             Console.WriteLine("Press enter to exit..");
             Console.ReadLine();
         }
@@ -91,15 +92,15 @@ namespace InformalTests
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
             var watch = Stopwatch.StartNew();
-            //var dic = new Dictionary<int, int>(n);
-            //for (int i = 0; i < n; i++)
-            //{
-            //    dic.Add(i, i);
-            //}
-            //Console.WriteLine($"Dictionary<int, int> Elapsed time: {watch.Elapsed}");
+            var dic = new Dictionary<int, int>(n);
+            for (int i = 0; i < n; i++)
+            {
+                dic.Add(i, i);
+            }
+            Console.WriteLine($"Dictionary<int, int> Elapsed time: {watch.Elapsed}");
             Console.WriteLine($"Doing {n} inserts ...");
             watch.Restart();
-            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, (key) => Hashing.FastHashMix((ulong) key), null, false))
+            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, (key) => (ulong) (key), null, false))
             {
                 for (int i = 0; i < n; i++)
                 {
