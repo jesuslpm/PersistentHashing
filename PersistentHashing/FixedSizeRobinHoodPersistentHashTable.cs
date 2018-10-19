@@ -244,6 +244,26 @@ namespace PersistentHashing
             }
         }
 
+        public bool TryAdd(TKey key, TValue value)
+        {
+            var idealSlotIndex = GetIdealSlotIndex(key);
+            var recordPointer = FindRecord(idealSlotIndex, key);
+            if (recordPointer == null)
+            {
+                RobinHoodAdd(idealSlotIndex, key, value);
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        public bool ContainsKey(TKey key)
+        {
+            return FindRecord(GetIdealSlotIndex(key), key) != null;
+        }
+
         public void Put(TKey key, TValue value)
         {
             var idealSlotIndex = GetIdealSlotIndex(key);
@@ -263,10 +283,10 @@ namespace PersistentHashing
         {
             byte* recordPointer = GetRecordPointer(idealSlotIndex);
             ushort distance = 1; //start with 1 because 0 is reserved for free slots.
-            while (true)
+            for (;;)
             {
                 ushort currentRecordDistance = GetDistance(recordPointer);
-                if (currentRecordDistance == 0)
+                if (currentRecordDistance == 0) // found free slot
                 {
                     SetKey(recordPointer, key);
                     SetValue(recordPointer, value);
@@ -274,7 +294,7 @@ namespace PersistentHashing
                     if (MaxDistance < distance) MaxDistance = distance;
                     return;
                 }
-                else if (currentRecordDistance < distance)
+                else if (currentRecordDistance < distance) // found richer record
                 {
                     /* Swap Robin Hood style */
                     TKey tempKey = GetKey(GetKeyPointer(recordPointer));
@@ -292,7 +312,7 @@ namespace PersistentHashing
                     throw new InvalidOperationException("Reached max distance");
                 }
                 recordPointer += recordSize;
-                if (recordPointer >= endTablePointer)
+                if (recordPointer >= endTablePointer) // start from begining when reaching the end
                 {
                     recordPointer = tablePointer;
                 }

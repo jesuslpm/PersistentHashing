@@ -10,16 +10,41 @@ using System.Threading.Tasks;
 
 namespace InformalTests
 {
+
     class Program
     {
         const int n = 10_000_000;
 
         static void Main(string[] args)
         {
-            test();
-            test();
+            BenchMark();
             Console.WriteLine("Press enter to exit..");
             Console.ReadLine();
+        }
+
+        static void BenchMark()
+        {
+            Func<IEnumerable<string>>[] benchmarFunctions = new Func<IEnumerable<string>>[]
+            {
+                BenchmarkDictionarySequential, BenchmarkDictionaryRandom, BenchmarkHashTableSequential, BenchmarkHashTableRandom,
+                BenchmarkLock, BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock
+            };
+
+            // warm up
+            for (int i = 0; i < benchmarFunctions.Length; i++)
+            {
+                benchmarFunctions[i]().ToList();
+            }
+
+            // show results
+            for (int i = 0; i < benchmarFunctions.Length; i++)
+            {
+                foreach(var line in benchmarFunctions[i]())
+                {
+                    Console.WriteLine(line);
+                }
+                Console.WriteLine();
+            }
         }
 
         static volatile bool stop = false;
@@ -58,70 +83,162 @@ namespace InformalTests
             }
         }
 
-        static void testReaderWriterSlim()
+        static string BenchmarkAction(string description, Action<int> action, int times = n)
         {
-            var readerWriterLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
-            var spinLock = new SpinLock();
-           
             var watch = Stopwatch.StartNew();
-            var sync = new object();
-
-            var operation = new SynchonizedOperation();
-
-            var waitHandle = new ManualResetEvent(true);
-            Func<int> func = () => 1;
-            for (var i = 0; i < n; i++)
-            {
-                //bool lockTaken = false;
-                //spinLock.Enter(ref lockTaken);
-                //if (lockTaken) spinLock.Exit();
-                //readerWriterLock.EnterReadLock();
-                //readerWriterLock.ExitReadLock();
-
-                waitHandle.Reset();
-                waitHandle.Set();
-                //operation.Write(func);
-            }
+            for (int i = 0; i < times; i++) action(i);
             watch.Stop();
-            Console.WriteLine($"TestReaderWriterSlim elapsed time: {watch.Elapsed}");
+            return description + $" in {watch.Elapsed}";
         }
 
-        static void test()
+
+        static IEnumerable<string> BenchmarkDictionarySequential()
         {
-            const int n = 10_000_000;
+            var dic = new Dictionary<int, int>(n);
+            yield return "Dictionary sequential access benchmark";
+            yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) => dic.Add(i, i));
+        }
+
+
+
+        static IEnumerable<string>  BenchmarkDictionaryRandom()
+        {
+            var dic = new Dictionary<long, long>(n);
+            var rnd = new Random(0);
+            yield return "Dictionary random access benchmark";
+            yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) =>
+            {
+                long x;
+                do
+                {
+                    x = rnd.Next();
+                } while (dic.ContainsKey(x));
+                dic.Add(x, x);
+            });
+            
+        }
+
+        static IEnumerable<string> BenchmarkHashTableRandom()
+        {
+            //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            var watch = Stopwatch.StartNew();
-            var dic = new Dictionary<int, int>(n);
-            for (int i = 0; i < n; i++)
+
+            var rnd = new Random(0);
+            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, (key) => (ulong)(key), null, false))
             {
-                dic.Add(i, i);
-            }
-            Console.WriteLine($"Dictionary<int, int> Elapsed time: {watch.Elapsed}");
-            Console.WriteLine($"Doing {n} inserts ...");
-            watch.Restart();
-            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, (key) => (ulong) (key), null, false))
-            {
-                for (int i = 0; i < n; i++)
+                yield return "HashTable random access benchmark";
+                yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) =>
                 {
-                    hashTable.Add(i, i);
-                }
-                Console.WriteLine($"FixedSizeRobinHoodPersistentHashTable<long, long> Elapsed time: {watch.Elapsed}, MaxDistance: {hashTable.MaxDistance}");
-                watch.Restart();
+                    long x;
+                    do
+                    {
+                        x = rnd.Next();
+                    } while (hashTable.ContainsKey(x));
+                    hashTable.Add(x, x);
+                });
+                yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";
+                yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
+                rnd = new Random(0);
+                yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
+                {
+                    long key = rnd.Next();
+                    hashTable.TryGet(key, out long value);
+                    if (value != key) throw new InvalidOperationException("Test failed");
+                });
+            }
+        }
 
-                hashTable.Flush();
-                Console.WriteLine($"Flush elapsed time: {watch.Elapsed}");
-                watch.Restart();
-
-                Console.WriteLine($"Reading {n} records");
-                for (int i = 0; i < n; i++)
+        static IEnumerable<string> BenchmarkHashTableSequential()
+        {
+            //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
+            string filePath = "Int64Int64.hash-table";
+            if (File.Exists(filePath)) File.Delete(filePath);
+            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, (key) => (ulong)(key), null, false))
+            {
+                yield return "HashTable sequencial access benchmark";
+                yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => hashTable.Add(i, i));
+                yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";
+                yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
+                yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
                 {
                     hashTable.TryGet(i, out long v);
                     if (v != i) throw new InvalidOperationException("Test failed");
-                }
-                Console.WriteLine($"FixedSizeRobinHoodPersistentHashTable<long, long> Elapsed time: {watch.Elapsed}");
-                watch.Restart();
+                });
             }
+        }
+
+
+
+        static IEnumerable<string> BenchmarkHashTable(Func<long, ulong> hashFunction, Action<FixedSizeRobinHoodPersistentHashTable<long, long>, int> addAction)
+        {
+            string filePath = "Int64Int64.hash-table";
+            if (File.Exists(filePath)) File.Delete(filePath);
+            using (var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, n, hashFunction, null, false))
+            {
+                yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => addAction(hashTable, i));
+                yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";
+                yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
+                yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
+                {
+                    hashTable.TryGet(i, out long v);
+                    if (v != i) throw new InvalidOperationException("Test failed");
+                });
+            }
+        }
+
+        static IEnumerable<string> BenchmarkLock()
+        {
+            object syncObject = new object();
+            yield return "Lock benchmark";
+            yield return BenchmarkAction($"Executed Monitor.Enter and Monitor.Exit {n:0,0} times", _ =>
+            {
+                lock (syncObject) { }
+            });
+        }
+
+        static IEnumerable<string> BenchmarkReaderWriterLockSlim()
+        {
+            ReaderWriterLockSlim readerWriterLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
+            yield return "ReaderWriterLockSlim NoRecursion no contention benchmark";
+            yield return BenchmarkAction($"Executed EnterReadLock and ExitReadLock {n:0,0} times", _ =>
+            {
+                readerWriterLock.EnterReadLock();
+                readerWriterLock.ExitReadLock();
+            });
+            yield return BenchmarkAction($"Executed EnterWriteLock and ExitWriteLock {n:0,0} times", _ =>
+            {
+                readerWriterLock.EnterWriteLock();
+                readerWriterLock.ExitWriteLock();
+            });
+        }
+
+        static IEnumerable<string> BenchmarkReaderWriterLock()
+        {
+            ReaderWriterLock readerWriterLock = new ReaderWriterLock();
+            yield return "ReaderWriterLock no contention benchmark";
+            yield return BenchmarkAction($"Executed AcquireReaderLock and ReleaseReaderLock {n:0,0} times", _ =>
+            {
+                readerWriterLock.AcquireReaderLock(10000);
+                readerWriterLock.ReleaseReaderLock();
+            });
+            yield return BenchmarkAction($"Executed AcquireWriterLock and ReleaseWriterLock {n:0,0} times", _ =>
+            {
+                readerWriterLock.AcquireWriterLock(10000);
+                readerWriterLock.ReleaseWriterLock();
+            });
+        }
+
+        static IEnumerable<string> BenchmarkSpinLock()
+        {
+            SpinLock spinLock = new SpinLock();
+            yield return "SpinLock no contention benchmark";
+            yield return BenchmarkAction($"Executed Enter and Exit {n:0,0} times", _ =>
+            {
+                bool lockTaken = false;
+                spinLock.Enter(ref lockTaken);
+                if (lockTaken) spinLock.Exit();
+            });
         }
     }
 }
