@@ -35,7 +35,13 @@ namespace PersistentHashing
 
         private readonly Func<TKey, long> hashFunction;
         private readonly IEqualityComparer<TKey> comparer;
-        
+
+        public long Count
+        {
+            get { return headerPointer->RecordCount; }
+            private set { headerPointer->RecordCount = value; }
+        }
+
 
 
         public FixedSizeHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
@@ -134,7 +140,7 @@ namespace PersistentHashing
             headerPointer->IsAligned = isAligned;
             headerPointer->KeySize = keySize;
             headerPointer->Magic = FixedSizeHashTableFileHeader.MagicNumber;
-            headerPointer->RecordCount = 0;
+            Count = 0;
             headerPointer->RecordSize = recordSize;
             headerPointer->Reserved[0] = 0;
             headerPointer->Reserved[1] = 0;
@@ -244,6 +250,7 @@ namespace PersistentHashing
             if (recordPointer == null)
             {
                 RobinHoodAdd(initialSlotIndex, key, value);
+                
                 return true;
             }
             else
@@ -285,6 +292,7 @@ namespace PersistentHashing
                     SetValue(recordPointer, value);
                     SetDistance(recordPointer, distance);
                     if (MaxDistance < distance) MaxDistance = distance;
+                    Count = Count + 1;
                     return;
                 }
                 else if (currentRecordDistance < distance) // found richer record

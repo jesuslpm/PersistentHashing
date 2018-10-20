@@ -4,7 +4,7 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    public unsafe class MemoryMappingSession: IDisposable
+    public unsafe sealed class MemoryMappingSession: IDisposable
     {
         private readonly MemoryMapper mapper;
         private List<MemoryMapping> mappings;
@@ -21,12 +21,26 @@ namespace PersistentHashing
 
         public void Dispose()
         {
+            Dispose(true);
+        }
+
+        private void Dispose(bool disposing)
+        {
             if (IsDisposed) return;
             IsDisposed = true;
             foreach (var mapping in mappings)
             {
                 mapping.Release();
             }
+            if (disposing)
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
+
+        ~MemoryMappingSession()
+        {
+            Dispose(false);
         }
 
         public byte* GetBaseAddress()
