@@ -34,12 +34,13 @@ namespace PersistentHashing
         {
         }
 
+
         public bool MoveNext()
         {
-            if (recordPointer < hashTable.endTablePointer)
+            while (recordPointer < hashTable.endTablePointer)
             {
                 recordPointer += hashTable.recordSize;
-                return true;
+                if (hashTable.GetDistance(recordPointer) > 0) return true;
             }
             return false;
         }
