@@ -36,6 +36,7 @@ namespace PersistentHashing
 
         private readonly Func<TKey, long> hashFunction;
         private readonly IEqualityComparer<TKey> comparer;
+        private readonly IEqualityComparer<TValue> valueComparer;
 
         public long Count
         {
@@ -50,6 +51,7 @@ namespace PersistentHashing
             this.isAligned = isAligned;
             this.hashFunction = hashFunction;
             this.comparer = comparer ?? EqualityComparer<TKey>.Default;
+            this.valueComparer = EqualityComparer<TValue>.Default;
             CalculateOffsetsAndSizes();
             slotCount = (long) Bits.NextPowerOf2(capacity);
             mask = (long) slotCount - 1L;
@@ -435,7 +437,11 @@ namespace PersistentHashing
 
         public bool Contains(KeyValuePair<TKey, TValue> item)
         {
-            return this.ContainsKey(item.Key);
+            if (TryGetValue(item.Key, out TValue value))
+            {
+                return valueComparer.Equals(item.Value, value);
+            }
+            return false;
         }
 
         public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
