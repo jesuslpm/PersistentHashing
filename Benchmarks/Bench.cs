@@ -134,7 +134,7 @@ namespace Benchmarks
                 yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
                 {
                     long key = rnd.Next();
-                    hashTable.TryGet(key, out long value);
+                    hashTable.TryGetValue(key, out long value);
                     if (value != key) throw new InvalidOperationException("Test failed");
                 });
             }
@@ -153,7 +153,7 @@ namespace Benchmarks
                 yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
                 yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
                 {
-                    hashTable.TryGet(i, out long v);
+                    hashTable.TryGetValue(i, out long v);
                     if (v != i) throw new InvalidOperationException("Test failed");
                 });
             }
@@ -171,7 +171,7 @@ namespace Benchmarks
                 yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
                 yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
                 {
-                    hashTable.TryGet(i, out long v);
+                    hashTable.TryGetValue(i, out long v);
                     if (v != i) throw new InvalidOperationException("Test failed");
                 });
             }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -6,7 +7,7 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    public unsafe class FixedSizeHashTable<TKey, TValue>: IDisposable where TKey:unmanaged where TValue:unmanaged
+    public unsafe class FixedSizeHashTable<TKey, TValue>: IDisposable, IDictionary<TKey, TValue> where TKey:unmanaged where TValue:unmanaged
     {
         // <key><value-padding><value><distance padding><distance16><slot-padding>
 
@@ -18,7 +19,7 @@ namespace PersistentHashing
         int keySize;
         int valueSize;
         int distanceSize;
-        int recordSize;
+        internal int recordSize;
         readonly long slotCount;
         readonly long mask;
 
@@ -27,8 +28,8 @@ namespace PersistentHashing
         private byte* fileBaseAddress;
 
         private FixedSizeHashTableFileHeader* headerPointer;
-        private readonly byte* tablePointer;
-        private readonly byte* endTablePointer;
+        internal readonly byte* tablePointer;
+        internal readonly byte* endTablePointer;
         private readonly int bits;
 
         public int MaxDistance { get; private set; }
@@ -91,7 +92,7 @@ namespace PersistentHashing
         /// <param name="recordPointer"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        short GetDistance(byte* recordPointer) => 
+        internal short GetDistance(byte* recordPointer) => 
             *(short*)(recordPointer + distanceOffset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -113,7 +114,7 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        byte* GetKeyPointer(byte* recordPointer) => 
+        internal byte* GetKeyPointer(byte* recordPointer) => 
             recordPointer + keyOffset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -121,18 +122,19 @@ namespace PersistentHashing
             new ReadOnlySpan<byte>(keyPointer, (int)keySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static TKey GetKey(byte* keyPointer) => 
+        internal static TKey GetKey(byte* keyPointer) => 
             *(TKey*)keyPointer;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        byte* GetValuePointer(byte* recordPointer) => 
+        internal byte* GetValuePointer(byte* recordPointer) => 
             recordPointer + valueOffset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         ReadOnlySpan<byte> GetValueAsSpan(byte *valuePointer) => 
             new ReadOnlySpan<byte>(valuePointer, (int)valueSize);
 
-        static TValue GetValue(byte* valuePointer) => 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static internal TValue GetValue(byte* valuePointer) => 
             *(TValue*)valuePointer;
 
         void WriteHeader()
@@ -222,7 +224,7 @@ namespace PersistentHashing
             }
         }
 
-        public bool TryGet(TKey key, out TValue value)
+        public bool TryGetValue(TKey key, out TValue value)
         {
             var initialSlotIndex = GetInitialSlotIndex(key);
             var recordPointer = FindRecord(initialSlotIndex, key);
@@ -322,13 +324,13 @@ namespace PersistentHashing
 
         public void Delete(TKey key)
         {
-            if (!TryDelete(key))
+            if (!Remove(key))
             {
                 throw new ArgumentException($"key {key} not found");
             }
         }
 
-        public bool TryDelete(TKey key)
+        public bool Remove(TKey key)
         {
             byte* emptyRecordPointer = FindRecord(GetInitialSlotIndex(key), key);
             if (emptyRecordPointer == null)
@@ -383,6 +385,30 @@ namespace PersistentHashing
 
         public bool IsDisposed { get; private set; }
 
+        public ICollection<TKey> Keys => new FixedSizeHashTableKeyCollection<TKey, TValue>(this);
+
+        public ICollection<TValue> Values => new FixedSizeHashTableValueCollection<TKey, TValue>(this);
+
+        int ICollection<KeyValuePair<TKey, TValue>>.Count => (int) Count;
+
+        public bool IsReadOnly => false;
+
+        public TValue this[TKey key]
+        {
+            get
+            {
+                if (!TryGetValue(key, out TValue value))
+                {
+                    throw new ArgumentException($"Key {key} not found.");
+                }
+                return value;
+            }
+            set
+            {
+                Put(key, value);
+            }
+        }
+
         public void Dispose()
         {
             if (IsDisposed) return;
@@ -395,5 +421,46 @@ namespace PersistentHashing
         {
             this.memoryMapper.Flush();
         }
+
+        public void Add(KeyValuePair<TKey, TValue> item)
+        {
+            Add(item.Key, item.Value);
+        }
+
+        public void Clear()
+        {
+            Memory.ZeroMemory(new IntPtr(tablePointer), new IntPtr(recordSize * Count));
+            Count = 0;
+        }
+
+        public bool Contains(KeyValuePair<TKey, TValue> item)
+        {
+            return this.ContainsKey(item.Key);
+        }
+
+        public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
+        {
+            if (array == null) throw new ArgumentNullException(nameof(array));
+            if (arrayIndex < 0) throw new ArgumentOutOfRangeException(nameof(arrayIndex), "arrayIndex parameter must be greater than zero");
+            if (this.Count > array.Length - arrayIndex) throw new ArgumentException("The array has not enough space to hold all items");
+            foreach (var keyValue in this)
+            {
+                array[arrayIndex++] = keyValue;
+            }
+        }
+
+        public bool Remove(KeyValuePair<TKey, TValue> item)
+        {
+            return Remove(item.Key);
+        }
+
+
+        public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
+        {
+            return new FixedSizeHashTableRecordEnumerator<TKey, TValue>(this);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+       
     }
 }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace PersistentHashing
@@ -11,7 +12,10 @@ namespace PersistentHashing
     */
     public class Memory
     {
-        
+
+        [DllImport("Kernel32.dll", EntryPoint = "RtlZeroMemory", SetLastError = false)]
+        public static extern void ZeroMemory(IntPtr dest, IntPtr size);
+
         public static unsafe int Compare(void* p1, void* p2, int size)
         {
             byte* bpx = (byte*)p1;
