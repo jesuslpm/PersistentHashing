@@ -429,7 +429,7 @@ namespace PersistentHashing
 
         public void Clear()
         {
-            Memory.ZeroMemory(new IntPtr(tablePointer), new IntPtr(recordSize * Count));
+            Memory.ZeroMemory(new IntPtr(tablePointer), new IntPtr(recordSize * slotCount));
             Count = 0;
         }
 
