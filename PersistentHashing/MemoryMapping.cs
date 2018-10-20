@@ -11,7 +11,6 @@ namespace PersistentHashing
     internal unsafe class MemoryMapping
     {
 
-        private const int AllocationGranularity = 64 * 1024;
 
         private int refCount;
         private List<MemoryMappedArea> areas = new List<MemoryMappedArea>();
@@ -57,7 +56,7 @@ namespace PersistentHashing
         internal static MemoryMapping Grow(long bytesToGrow, MemoryMapping mapping)
         {
            
-            if (bytesToGrow <= 0 || bytesToGrow % AllocationGranularity != 0)
+            if (bytesToGrow <= 0 || bytesToGrow % Constants.AllocationGranularity != 0)
             {
                 throw new ArgumentException("The growth must be a multiple of 64Kb and greater than zero");
             }

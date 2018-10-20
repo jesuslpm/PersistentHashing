@@ -22,7 +22,7 @@ key size and value size, and end with a concurrent persistent hash table with va
 
 It's not planned to make them crash proof.
 
-# FixedSizeRobinHoodPersistentHashTable<TKey, TValue>
+# FixedSizeHashTable<TKey, TValue>
 
 This is the most basic persistent hash table. It uses Robin Hood Hashing. It's capacity, key size and value size are fixed.
 `TKey` and `TValue` are value types, they must not be reference types and must not contain any reference type members at any level of nesting.
@@ -31,40 +31,40 @@ It's roughly as fast as `Dictionary<TKey, TValue>` while being persistent and me
 
 The following line of code:
 
-```<language>
+```csharp
 var dic = new Dictionary<long, long>(200_000_000);
 ```
 
 Throws OutOfMemofyException in my computer. However the following does not:
 
 
-```<language>
-var hashTable = new FixedSizeRobinHoodPersistentHashTable<long, long>(filePath, 200_000_000);
+```csharp
+var hashTable = new FixedSizeHashTable<long, long>(filePath, 200_000_000);
 ```
 
 
 
-Here you have some benchmarks results comparing `Dictionary` and `FixedSizeRobinHoodPersistentHashTable`:
+Here you have some benchmarks results comparing `Dictionary` and `FixedSizeHashTable`:
 
 
-```<language>
-> Dictionary sequential access benchmark
-> Added 10,000,000 items to Dictionary in 00:00:00.1778698
-> 
-> Dictionary random access benchmark
-> Added 10,000,000 items to Dictionary in 00:00:02.2427423
-> 
-> HashTable sequencial access benchmark
-> Added 10,000,000 items to HashTable in 00:00:00.2956129
-> HashTable MaxDistance:  1
-> HashTable flushed in 00:00:00.3712881
-> Read 10,000,000 items from HashTable in 00:00:00.2086666
-> 
-> HashTable random access benchmark
-> Added 10,000,000 items to HashTable in 00:00:02.1242235
-> HashTable MaxDistance:  11
-> HashTable flushed in 00:00:00.6129888
-> Read 10,000,000 items from HashTable in 00:00:01.4045045
+```
+Dictionary sequential access benchmark
+Added 10,000,000 items to Dictionary in 00:00:00.1778698
+ 
+Dictionary random access benchmark
+Added 10,000,000 items to Dictionary in 00:00:02.2427423
+ 
+HashTable sequencial access benchmark
+Added 10,000,000 items to HashTable in 00:00:00.2956129
+HashTable MaxDistance:  1
+HashTable flushed in 00:00:00.3712881
+Read 10,000,000 items from HashTable in 00:00:00.2086666
+ 
+HashTable random access benchmark
+Added 10,000,000 items to HashTable in 00:00:02.1242235
+HashTable MaxDistance:  11
+HashTable flushed in 00:00:00.6129888
+Read 10,000,000 items from HashTable in 00:00:01.4045045
 ```
 
 

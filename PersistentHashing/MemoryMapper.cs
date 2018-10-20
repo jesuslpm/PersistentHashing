@@ -9,7 +9,6 @@ namespace PersistentHashing
     public unsafe sealed class MemoryMapper : IDisposable
     {
 
-        private const int AllocationGranularity = 64 * 1024;
 
         private FileStream fs;
         internal MemoryMapping mapping;
@@ -25,7 +24,7 @@ namespace PersistentHashing
 
         public MemoryMapper(string filePath, long initialFileSize)
         {
-            if (initialFileSize <= 0 || initialFileSize % AllocationGranularity != 0)
+            if (initialFileSize <= 0 || initialFileSize % Constants.AllocationGranularity != 0)
             {
                 throw new ArgumentException("The initial file size must be a multiple of 64Kb and grater than zero");
             }
@@ -33,7 +32,7 @@ namespace PersistentHashing
             fs = new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             if (existingFile)
             {
-                if (fs.Length <= 0 || fs.Length % AllocationGranularity != 0)
+                if (fs.Length <= 0 || fs.Length % Constants.AllocationGranularity != 0)
                 {
                     throw new ArgumentException("Invalid file. Its lenght must be a multiple of 64Kb and greater than zero");
                 }

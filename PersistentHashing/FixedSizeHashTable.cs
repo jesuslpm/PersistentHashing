@@ -6,11 +6,11 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    public unsafe class FixedSizeRobinHoodPersistentHashTable<TKey, TValue>: IDisposable where TKey:unmanaged where TValue:unmanaged
+    public unsafe class FixedSizeHashTable<TKey, TValue>: IDisposable where TKey:unmanaged where TValue:unmanaged
     {
         // <key><value-padding><value><distance padding><distance16><slot-padding>
 
-        int keyOffset;
+        const int keyOffset = 0;
         int valueOffset;
         int distanceOffset;
         readonly bool isAligned;
@@ -26,7 +26,7 @@ namespace PersistentHashing
         private MemoryMappingSession mappingSession;
         private byte* fileBaseAddress;
 
-        private FixedSizeRobinHoodHashTableFileHeader* headerPointer;
+        private FixedSizeHashTableFileHeader* headerPointer;
         private readonly byte* tablePointer;
         private readonly byte* endTablePointer;
         private readonly int bits;
@@ -37,9 +37,8 @@ namespace PersistentHashing
         private readonly IEqualityComparer<TKey> comparer;
         
 
-        private const int AllocationGranularity = 64 * 1024;
 
-        public FixedSizeRobinHoodPersistentHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
+        public FixedSizeHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
         {
             this.isAligned = isAligned;
             this.hashFunction = hashFunction;
@@ -49,8 +48,8 @@ namespace PersistentHashing
             mask = (long) slotCount - 1L;
             bits = Bits.MostSignificantBit(slotCount);
 
-            var fileSize = (long) sizeof(FixedSizeRobinHoodHashTableFileHeader) +  slotCount * recordSize;
-            fileSize += (AllocationGranularity - (fileSize & (AllocationGranularity - 1))) & (AllocationGranularity - 1);
+            var fileSize = (long) sizeof(FixedSizeHashTableFileHeader) +  slotCount * recordSize;
+            fileSize += (Constants.AllocationGranularity - (fileSize & (Constants.AllocationGranularity - 1))) & (Constants.AllocationGranularity - 1);
 
             var isNew = !File.Exists(filePath);
 
@@ -58,7 +57,7 @@ namespace PersistentHashing
             mappingSession = memoryMapper.OpenSession();
 
             fileBaseAddress = mappingSession.GetBaseAddress();
-            headerPointer = (FixedSizeRobinHoodHashTableFileHeader*)fileBaseAddress;
+            headerPointer = (FixedSizeHashTableFileHeader*)fileBaseAddress;
 
             if (isNew)
             {
@@ -69,7 +68,7 @@ namespace PersistentHashing
                 ValidateHeader();
                 slotCount = headerPointer->Slots;
             }
-            tablePointer = fileBaseAddress + sizeof(FixedSizeRobinHoodHashTableFileHeader);
+            tablePointer = fileBaseAddress + sizeof(FixedSizeHashTableFileHeader);
             endTablePointer = tablePointer + recordSize * slotCount;
         }
 
@@ -78,8 +77,8 @@ namespace PersistentHashing
             tablePointer + recordSize * slotIndex;
 
         /// <summary>
-        /// Returns the distance + 1 to the ideal slot index.
-        /// The ideal slot index is the slot index where the hash maps to.
+        /// Returns the distance + 1 to the initial slot index.
+        /// The initial slot index is the slot index where the hash maps to.
         /// distance == 0 means the slot is free. distance > 0 means the slot is occupied
         /// The distance is incremented by 1 to reserve zero value as free slot.
         /// </summary>
@@ -134,7 +133,7 @@ namespace PersistentHashing
         {
             headerPointer->IsAligned = isAligned;
             headerPointer->KeySize = keySize;
-            headerPointer->Magic = FixedSizeRobinHoodHashTableFileHeader.MagicNumber;
+            headerPointer->Magic = FixedSizeHashTableFileHeader.MagicNumber;
             headerPointer->RecordCount = 0;
             headerPointer->RecordSize = recordSize;
             headerPointer->Reserved[0] = 0;
@@ -146,7 +145,7 @@ namespace PersistentHashing
 
         void ValidateHeader()
         {
-            if ( headerPointer->Magic != FixedSizeRobinHoodHashTableFileHeader.MagicNumber)
+            if ( headerPointer->Magic != FixedSizeHashTableFileHeader.MagicNumber)
             {
                 throw new FormatException("This is not a FixedSizeRobinHoodHashTableFile");
             }
@@ -170,8 +169,8 @@ namespace PersistentHashing
 
         private void CalculateOffsetsAndSizes()
         {
-            keySize = (int) sizeof(TKey);
-            valueSize = (int) sizeof(TValue);
+            keySize = sizeof(TKey);
+            valueSize = sizeof(TValue);
             distanceSize = sizeof(short);
 
 
@@ -180,7 +179,7 @@ namespace PersistentHashing
             int distanceAlignement = GetAlignement(distanceSize);
             int slotAlignement = Math.Max(distanceAlignement, Math.Max(keyAlignement, valueAlignement));
 
-            keyOffset = 0;
+            //keyOffset = 0;
             valueOffset = keyOffset + keySize + GetPadding(keyOffset + keySize, valueAlignement);
             distanceOffset = valueOffset + valueSize + GetPadding(valueOffset + valueSize, distanceAlignement);
             recordSize = distanceOffset + distanceSize + GetPadding(distanceOffset + distanceSize, slotAlignement);
@@ -204,7 +203,7 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long GetIdealSlotIndex(TKey key)
+        private long GetInitialSlotIndex(TKey key)
         {
             if (hashFunction == null)
             {
@@ -219,8 +218,8 @@ namespace PersistentHashing
 
         public bool TryGet(TKey key, out TValue value)
         {
-            var idealSlotIndex = GetIdealSlotIndex(key);
-            var recordPointer = FindRecord(idealSlotIndex, key);
+            var initialSlotIndex = GetInitialSlotIndex(key);
+            var recordPointer = FindRecord(initialSlotIndex, key);
             if (recordPointer == null)
             {
                 value = default;
@@ -232,13 +231,7 @@ namespace PersistentHashing
 
         public void Add(TKey key, TValue value)
         {
-            var idealSlotIndex = GetIdealSlotIndex(key);
-            var recordPointer = FindRecord(idealSlotIndex, key);
-            if (recordPointer == null)
-            {
-                RobinHoodAdd(idealSlotIndex, key, value);
-            }
-            else
+            if (!TryAdd(key, value))
             {
                 throw new ArgumentException($"An element with the same key {key} already exists");
             }
@@ -246,11 +239,11 @@ namespace PersistentHashing
 
         public bool TryAdd(TKey key, TValue value)
         {
-            var idealSlotIndex = GetIdealSlotIndex(key);
-            var recordPointer = FindRecord(idealSlotIndex, key);
+            var initialSlotIndex = GetInitialSlotIndex(key);
+            var recordPointer = FindRecord(initialSlotIndex, key);
             if (recordPointer == null)
             {
-                RobinHoodAdd(idealSlotIndex, key, value);
+                RobinHoodAdd(initialSlotIndex, key, value);
                 return true;
             }
             else
@@ -261,27 +254,27 @@ namespace PersistentHashing
 
         public bool ContainsKey(TKey key)
         {
-            return FindRecord(GetIdealSlotIndex(key), key) != null;
+            return FindRecord(GetInitialSlotIndex(key), key) != null;
         }
 
         public void Put(TKey key, TValue value)
         {
-            var idealSlotIndex = GetIdealSlotIndex(key);
-            var recordPointer = FindRecord(idealSlotIndex, key);
+            var initialSlotIndex = GetInitialSlotIndex(key);
+            var recordPointer = FindRecord(initialSlotIndex, key);
             if (recordPointer == null)
             {
-                RobinHoodAdd(idealSlotIndex, key, value);
+                RobinHoodAdd(initialSlotIndex, key, value);
             }
             else
             {
-                *(TValue*)GetValuePointer(recordPointer) = value;
+                SetValue(recordPointer, value);
                 //Unsafe.AsRef<TValue>(GetValuePointer(recordPointer)) = value;
             }
         }
 
-        private void RobinHoodAdd(long idealSlotIndex, TKey key, TValue value)
+        private void RobinHoodAdd(long initialSlotIndex, TKey key, TValue value)
         {
-            byte* recordPointer = GetRecordPointer(idealSlotIndex);
+            byte* recordPointer = GetRecordPointer(initialSlotIndex);
             short distance = 1; //start with 1 because 0 is reserved for free slots.
             for (;;)
             {
@@ -319,9 +312,49 @@ namespace PersistentHashing
             }
         }
 
-        private byte* FindRecord(long idealSlotIndex, TKey key)
+        public void Delete(TKey key)
         {
-            byte* recordPointer = GetRecordPointer(idealSlotIndex);
+            if (!TryDelete(key))
+            {
+                throw new ArgumentException($"key {key} not found");
+            }
+        }
+
+        public bool TryDelete(TKey key)
+        {
+            byte* emptyRecordPointer = FindRecord(GetInitialSlotIndex(key), key);
+            if (emptyRecordPointer == null)
+            {
+                return false;
+            }
+            byte* currentRecordPointer = emptyRecordPointer;
+            while (true)
+            {
+                /*
+                 * shift backward all entries following the entry to delete until either find an empty slot, 
+                 * or a record with a distance of 1  
+                 */
+                currentRecordPointer += recordSize;
+                if (currentRecordPointer >= endTablePointer) // start from begining when reaching the end
+                {
+                    currentRecordPointer = tablePointer;
+                }
+                short distance = GetDistance(currentRecordPointer);
+                if (distance <= 1)
+                {
+                    SetDistance(emptyRecordPointer, 0);
+                    return true;
+                }
+                SetKey(emptyRecordPointer, GetKey(currentRecordPointer));
+                SetValue(emptyRecordPointer, GetValue(currentRecordPointer));
+                SetDistance(emptyRecordPointer, (short)(distance - 1));
+                emptyRecordPointer = currentRecordPointer;
+            }
+        }
+
+        private byte* FindRecord(long initialSlotIndex, TKey key)
+        {
+            byte* recordPointer = GetRecordPointer(initialSlotIndex);
             bool isEndTableReached = false;
             while (true)
             {
