@@ -5,12 +5,12 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    internal unsafe class FixedSizeHashTableValueEnumerator<TKey, TValue> : IEnumerator<TValue> where TKey:unmanaged where TValue : unmanaged
+    internal unsafe class StaticFixedSizeHashTableValueEnumerator<TKey, TValue> : IEnumerator<TValue> where TKey:unmanaged where TValue : unmanaged
     {
         private byte* recordPointer;
-        private readonly FixedSizeHashTable<TKey, TValue> hashTable;
+        private readonly StaticFixedSizeHashTable<TKey, TValue> hashTable;
    
-        public FixedSizeHashTableValueEnumerator(FixedSizeHashTable<TKey, TValue> hashTable )
+        public StaticFixedSizeHashTableValueEnumerator(StaticFixedSizeHashTable<TKey, TValue> hashTable )
         {
             this.hashTable = hashTable;
             recordPointer = hashTable.tablePointer;
@@ -24,7 +24,7 @@ namespace PersistentHashing
                 {
                     throw new InvalidOperationException("No more records");
                 }
-                return FixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer));
+                return StaticFixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer));
             }
         }
 

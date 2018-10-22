@@ -7,7 +7,7 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    public unsafe class FixedSizeHashTable<TKey, TValue>: IDisposable, IDictionary<TKey, TValue> where TKey:unmanaged where TValue:unmanaged
+    public unsafe class StaticFixedSizeHashTable<TKey, TValue>: IDisposable, IDictionary<TKey, TValue> where TKey:unmanaged where TValue:unmanaged
     {
         // <key><value-padding><value><distance padding><distance16><record-padding>
 
@@ -28,7 +28,7 @@ namespace PersistentHashing
         private MemoryMappingSession mappingSession;
         private byte* fileBaseAddress;
 
-        private FixedSizeHashTableFileHeader* headerPointer;
+        private StaticFixedSizeHashTableFileHeader* headerPointer;
         internal readonly byte* tablePointer;
         internal readonly byte* endTablePointer;
         private readonly int bits;
@@ -57,7 +57,7 @@ namespace PersistentHashing
 
 
 
-        public FixedSizeHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
+        public StaticFixedSizeHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
         {
             this.isAligned = isAligned;
             this.hashFunction = hashFunction;
@@ -68,7 +68,7 @@ namespace PersistentHashing
             mask = (long) slotCount - 1L;
             bits = Bits.MostSignificantBit(slotCount);
 
-            var fileSize = (long) sizeof(FixedSizeHashTableFileHeader) +  slotCount * recordSize;
+            var fileSize = (long) sizeof(StaticFixedSizeHashTableFileHeader) +  slotCount * recordSize;
             fileSize += (Constants.AllocationGranularity - (fileSize & (Constants.AllocationGranularity - 1))) & (Constants.AllocationGranularity - 1);
 
             var isNew = !File.Exists(filePath);
@@ -77,7 +77,7 @@ namespace PersistentHashing
             mappingSession = memoryMapper.OpenSession();
 
             fileBaseAddress = mappingSession.GetBaseAddress();
-            headerPointer = (FixedSizeHashTableFileHeader*)fileBaseAddress;
+            headerPointer = (StaticFixedSizeHashTableFileHeader*)fileBaseAddress;
 
             if (isNew)
             {
@@ -88,7 +88,7 @@ namespace PersistentHashing
                 ValidateHeader();
                 slotCount = headerPointer->SlotCount;
             }
-            tablePointer = fileBaseAddress + sizeof(FixedSizeHashTableFileHeader);
+            tablePointer = fileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
             endTablePointer = tablePointer + recordSize * slotCount;
         }
 
@@ -155,7 +155,7 @@ namespace PersistentHashing
             headerPointer->IsAligned = isAligned;
             headerPointer->DistanceSum = 0;
             headerPointer->KeySize = keySize;
-            headerPointer->Magic = FixedSizeHashTableFileHeader.MagicNumber;
+            headerPointer->Magic = StaticFixedSizeHashTableFileHeader.MagicNumber;
             headerPointer->MaxDistance = 0;
             headerPointer->RecordCount = 0;
             headerPointer->RecordSize = recordSize;
@@ -166,9 +166,9 @@ namespace PersistentHashing
 
         void ValidateHeader()
         {
-            if ( headerPointer->Magic != FixedSizeHashTableFileHeader.MagicNumber)
+            if ( headerPointer->Magic != StaticFixedSizeHashTableFileHeader.MagicNumber)
             {
-                throw new FormatException($"This is not a {nameof(FixedSizeHashTable<TKey, TValue>)} file");
+                throw new FormatException($"This is not a {nameof(StaticFixedSizeHashTable<TKey, TValue>)} file");
             }
             if (headerPointer->IsAligned != isAligned)
             {
@@ -409,9 +409,9 @@ namespace PersistentHashing
 
         public bool IsDisposed { get; private set; }
 
-        public ICollection<TKey> Keys => new FixedSizeHashTableKeyCollection<TKey, TValue>(this);
+        public ICollection<TKey> Keys => new StaticFixedSizeHashTableKeyCollection<TKey, TValue>(this);
 
-        public ICollection<TValue> Values => new FixedSizeHashTableValueCollection<TKey, TValue>(this);
+        public ICollection<TValue> Values => new StaticFixedSizeHashTableValueCollection<TKey, TValue>(this);
 
         int ICollection<KeyValuePair<TKey, TValue>>.Count => (int) Count;
 
@@ -488,7 +488,7 @@ namespace PersistentHashing
 
         public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
         {
-            return new FixedSizeHashTableRecordEnumerator<TKey, TValue>(this);
+            return new StaticFixedSizeHashTableRecordEnumerator<TKey, TValue>(this);
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();

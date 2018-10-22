@@ -123,7 +123,7 @@ namespace Benchmarks
             if (File.Exists(filePath)) File.Delete(filePath);
 
             var rnd = new Random(0);
-            using (var hashTable = new FixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
             {
                 yield return "FixedSizeHashTable random access benchmark";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) =>
@@ -152,7 +152,7 @@ namespace Benchmarks
             //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new FixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
             {
                 yield return "FixedSizeHashTable sequencial access benchmark";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => hashTable.Add(i, i));
@@ -167,11 +167,11 @@ namespace Benchmarks
         }
 
 
-        static IEnumerable<string> BenchmarkHashTable(Func<long, long> hashFunction, Action<FixedSizeHashTable<long, long>, int> addAction)
+        static IEnumerable<string> BenchmarkHashTable(Func<long, long> hashFunction, Action<StaticFixedSizeHashTable<long, long>, int> addAction)
         {
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new FixedSizeHashTable<long, long>(filePath, n, hashFunction, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, hashFunction, null, false))
             {
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => addAction(hashTable, i));
                 yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";

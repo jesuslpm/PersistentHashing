@@ -12,17 +12,17 @@ Hash tables will have different features and constraints:
   * Fixed key size and fixed value size.
   * Fixed key size and variable value size.
   * Variable key size and variable value size.
-  * Fixed capacity.
-  * Variable capacity.
-  * Single threaded.
-  * Concurrent.
+  * Fixed capacity (static hash table).
+  * Variable capacity (dynamic hash table).
+  * Thread safe.
+  * Thread unsafe.
 
-The plan is starting with a single threaded persistent hash table using Robin Hood Hashing with fixed capacity,
+The plan is starting with a thread unsafe persistent hash table using Robin Hood Hashing with fixed capacity,
 key size and value size, and end with a concurrent persistent hash table with variable capacity and sizes.
 
 It's not planned to make them crash proof.
 
-# FixedSizeHashTable<TKey, TValue>
+# StaticFixedSizeHashTable<TKey, TValue>
 
 This is the most basic persistent hash table. It uses Robin Hood Hashing. It's capacity, key size and value size are fixed.
 `TKey` and `TValue` are value types, they must not be reference types and must not contain any reference type members at any level of nesting.
@@ -39,12 +39,12 @@ Throws `OutOfMemofyException` on my computer. However the following does not:
 
 
 ```csharp
-var hashTable = new FixedSizeHashTable<long, long>(filePath, 200_000_000);
+var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, 200_000_000);
 ```
 
 
 
-Here you have some benchmarks results comparing `Dictionary` and `FixedSizeHashTable`:
+Here you have some benchmarks results comparing `Dictionary` and `StaticFixedSizeHashTable`:
 
 
 ```
