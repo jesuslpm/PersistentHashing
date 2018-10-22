@@ -11,12 +11,14 @@ namespace PersistentHashing
         public const long MagicNumber = -2358176814029485096L;
 
         public long Magic;
-        public long Slots;
+        public long SlotCount;
         public long RecordCount;
+        public long DistanceSum;
         public int KeySize;
         public int ValueSize;
         public int RecordSize;
+        public int MaxDistance;
         public bool IsAligned;
-        public fixed byte Reserved[3];
+        public fixed byte Reserved[7];
     }
 }

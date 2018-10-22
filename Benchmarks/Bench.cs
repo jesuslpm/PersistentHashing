@@ -17,8 +17,15 @@ namespace Benchmarks
         {
             Func<IEnumerable<string>>[] benchmarFunctions = new Func<IEnumerable<string>>[]
             {
-                BenchmarkDictionarySequential, BenchmarkDictionaryRandom, BenchmarkHashTableSequential, BenchmarkHashTableRandom,
-                BenchmarkLock, BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock
+                //BenchmarkDictionarySequential, BenchmarkDictionaryRandom, BenchmarkHashTableSequential, BenchmarkHashTableRandom,
+                //BenchmarkLock, BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
+                //BenchmarkManualResetEvent,
+                BenchmarkVoid,
+                BenchmarkVoid,
+                BenchmarkMonitor,
+                BenchmarkMonitor,
+                BenchmarkSpinLatch,
+                BenchmarkSpinLatch
             };
 
             // warm up
@@ -177,15 +184,7 @@ namespace Benchmarks
             }
         }
 
-        static IEnumerable<string> BenchmarkLock()
-        {
-            object syncObject = new object();
-            yield return "Lock no contention";
-            yield return BenchmarkAction($"Executed Monitor.Enter and Monitor.Exit {n:0,0} times", _ =>
-            {
-                lock (syncObject) { }
-            });
-        }
+
 
         static IEnumerable<string> BenchmarkReaderWriterLockSlim()
         {
@@ -195,11 +194,6 @@ namespace Benchmarks
             {
                 readerWriterLock.EnterReadLock();
                 readerWriterLock.ExitReadLock();
-            });
-            yield return BenchmarkAction($"Executed EnterWriteLock and ExitWriteLock {n:0,0} times", _ =>
-            {
-                readerWriterLock.EnterWriteLock();
-                readerWriterLock.ExitWriteLock();
             });
         }
 
@@ -211,11 +205,6 @@ namespace Benchmarks
             {
                 readerWriterLock.AcquireReaderLock(10000);
                 readerWriterLock.ReleaseReaderLock();
-            });
-            yield return BenchmarkAction($"Executed AcquireWriterLock and ReleaseWriterLock {n:0,0} times", _ =>
-            {
-                readerWriterLock.AcquireWriterLock(10000);
-                readerWriterLock.ReleaseWriterLock();
             });
         }
 
@@ -229,6 +218,63 @@ namespace Benchmarks
                 spinLock.Enter(ref lockTaken);
                 if (lockTaken) spinLock.Exit();
             });
+        }
+
+        static IEnumerable<string> BenchmarkManualResetEvent()
+        {
+            ManualResetEvent manualResetEvent = new ManualResetEvent(true);
+            yield return "ManualResetEvent";
+            yield return BenchmarkAction($"Executed {n:0,0} times", _ =>
+            {
+                manualResetEvent.Reset();
+                manualResetEvent.Set();
+            }, n/10);
+        }
+
+        static IEnumerable<string> BenchmarkVoid()
+        {
+            yield return "Void";
+            var watch = Stopwatch.StartNew();
+            for (int i = 0; i < n; i++)
+            {
+            }
+            watch.Stop();
+            yield return $"Executed Void in {watch.Elapsed}";
+        }
+
+        static IEnumerable<string> BenchmarkMonitor()
+        {
+            object syncObject = new object();
+            yield return "Monitor no contention";
+            var watch = Stopwatch.StartNew();
+            for (int i = 0; i < n; i++)
+            {
+                bool taken = false;
+                try
+                {
+                    Monitor.Enter(syncObject, ref taken);
+                }
+                finally
+                {
+                    if (taken) Monitor.Exit(syncObject);
+                }
+            }
+            watch.Stop();
+            yield return $"Executed Monitor.Enter and Monitor.Exit in {watch.Elapsed}";
+        }
+
+        static IEnumerable<string> BenchmarkSpinLatch()
+        {
+            yield return "SpinLatch no contention";
+            var watch = Stopwatch.StartNew();
+            for (int i = 0; i < n; i++)
+            {
+                bool taken = false; int locked = 0;
+                SpinLatch.Enter(ref locked, ref taken);
+                if (taken) SpinLatch.Exit(ref locked);
+            }
+            watch.Stop();
+            yield return $"Executed {n:0,0} times in {watch.Elapsed}";
         }
     }
 }

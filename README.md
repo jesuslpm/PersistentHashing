@@ -1,5 +1,5 @@
 # PersistentHashing
-Persistent Hash Tables backed by Memory Mapped Files
+<strong>Lightning fast persistent hash tables backed by memory mapped files</strong>
 
 This library will contain a collection of classes that will implement
 persistent hash tables. 
@@ -35,7 +35,7 @@ The following line of code:
 var dic = new Dictionary<long, long>(200_000_000);
 ```
 
-Throws OutOfMemofyException in my computer. However the following does not:
+Throws `OutOfMemofyException` on my computer. However the following does not:
 
 
 ```csharp

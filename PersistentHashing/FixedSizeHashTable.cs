@@ -11,6 +11,7 @@ namespace PersistentHashing
     {
         // <key><value-padding><value><distance padding><distance16><record-padding>
 
+        public const short MaxAllowedDistance = 1024;
         const int keyOffset = 0;
         int valueOffset;
         int distanceOffset;
@@ -32,7 +33,17 @@ namespace PersistentHashing
         internal readonly byte* endTablePointer;
         private readonly int bits;
 
-        public int MaxDistance { get; private set; }
+
+        /// <summary>
+        /// Max distance ever seen in the hash table. 
+        /// MaxDistance is updated only on adding, It is not uptaded on removing.
+        /// </summary>
+        // MaxDistance starts with 0 while internal distance starts with 1. So, it is the real max distance.
+        public int MaxDistance => headerPointer->MaxDistance;
+
+        //Note that float casts are not redundant as VS says.
+        public float LoadFactor => (float)Count / (float)slotCount;
+        public float MeanDistance => (float)headerPointer->DistanceSum / (float)Count;
 
         private readonly Func<TKey, long> hashFunction;
         private readonly IEqualityComparer<TKey> comparer;
@@ -70,12 +81,12 @@ namespace PersistentHashing
 
             if (isNew)
             {
-                WriteHeader();
+                InitializeHeader();
             }
             else
             {
                 ValidateHeader();
-                slotCount = headerPointer->Slots;
+                slotCount = headerPointer->SlotCount;
             }
             tablePointer = fileBaseAddress + sizeof(FixedSizeHashTableFileHeader);
             endTablePointer = tablePointer + recordSize * slotCount;
@@ -88,8 +99,8 @@ namespace PersistentHashing
         /// <summary>
         /// Returns the distance + 1 to the initial slot index.
         /// The initial slot index is the slot index where the hash maps to.
-        /// distance == 0 means the slot is free. distance > 0 means the slot is occupied
-        /// The distance is incremented by 1 to reserve zero value as free slot.
+        /// distance == 0 means the slot is empty. distance > 0 means the slot is occupied
+        /// The distance is incremented by 1 to reserve zero value as empty slot.
         /// </summary>
         /// <param name="recordPointer"></param>
         /// <returns></returns>
@@ -139,17 +150,17 @@ namespace PersistentHashing
         static internal TValue GetValue(byte* valuePointer) => 
             *(TValue*)valuePointer;
 
-        void WriteHeader()
+        void InitializeHeader()
         {
             headerPointer->IsAligned = isAligned;
+            headerPointer->DistanceSum = 0;
             headerPointer->KeySize = keySize;
             headerPointer->Magic = FixedSizeHashTableFileHeader.MagicNumber;
-            Count = 0;
+            headerPointer->MaxDistance = 0;
+            headerPointer->RecordCount = 0;
             headerPointer->RecordSize = recordSize;
             headerPointer->Reserved[0] = 0;
-            headerPointer->Reserved[1] = 0;
-            headerPointer->Reserved[2] = 0;
-            headerPointer->Slots = slotCount;
+            headerPointer->SlotCount = slotCount;
             headerPointer->ValueSize = valueSize;
         }
 
@@ -157,7 +168,7 @@ namespace PersistentHashing
         {
             if ( headerPointer->Magic != FixedSizeHashTableFileHeader.MagicNumber)
             {
-                throw new FormatException("This is not a FixedSizeRobinHoodHashTableFile");
+                throw new FormatException($"This is not a {nameof(FixedSizeHashTable<TKey, TValue>)} file");
             }
             if (headerPointer->IsAligned != isAligned)
             {
@@ -212,6 +223,12 @@ namespace PersistentHashing
             return 1;
         }
 
+        /// <summary>
+        /// Returns the intial slot index corresponding to the key. 
+        /// It is the index that the key hash maps to.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private long GetInitialSlotIndex(TKey key)
         {
@@ -254,7 +271,6 @@ namespace PersistentHashing
             if (recordPointer == null)
             {
                 RobinHoodAdd(initialSlotIndex, key, value);
-                
                 return true;
             }
             else
@@ -279,24 +295,25 @@ namespace PersistentHashing
             else
             {
                 SetValue(recordPointer, value);
-                //Unsafe.AsRef<TValue>(GetValuePointer(recordPointer)) = value;
             }
         }
 
         private void RobinHoodAdd(long initialSlotIndex, TKey key, TValue value)
         {
             byte* recordPointer = GetRecordPointer(initialSlotIndex);
-            short distance = 1; //start with 1 because 0 is reserved for free slots.
-            for (;;)
+            short distance = 1; //start with 1 because 0 is reserved for empty slots.
+            while(true)
             {
                 short currentRecordDistance = GetDistance(recordPointer);
-                if (currentRecordDistance == 0) // found free slot
+                if (currentRecordDistance == 0) // found empty slot
                 {
                     SetKey(recordPointer, key);
                     SetValue(recordPointer, value);
                     SetDistance(recordPointer, distance);
-                    if (MaxDistance < distance) MaxDistance = distance;
-                    Count = Count + 1;
+
+                    if (headerPointer->MaxDistance < distance -1) headerPointer->MaxDistance = distance - 1;
+                    headerPointer->DistanceSum += distance - 1;
+                    headerPointer->RecordCount++;
                     return;
                 }
                 else if (currentRecordDistance < distance) // found richer record
@@ -304,17 +321,20 @@ namespace PersistentHashing
                     /* Swap Robin Hood style */
                     TKey tempKey = GetKey(GetKeyPointer(recordPointer));
                     TValue tempValue = GetValue(GetValuePointer(recordPointer));
+
                     SetKey(recordPointer, key);
                     SetValue(recordPointer, value);
                     SetDistance(recordPointer, distance);
+
+                    headerPointer->DistanceSum += distance - currentRecordDistance;
+
                     key = tempKey;
                     value = tempValue;
                     distance = currentRecordDistance;
                 }
-                distance++;
-                if (distance > 10_000)
+                if (distance++ > MaxAllowedDistance)
                 {
-                    throw new InvalidOperationException("Reached max distance");
+                    throw new InvalidOperationException("Reached MaxAllowedDistance");
                 }
                 recordPointer += recordSize;
                 if (recordPointer >= endTablePointer) // start from begining when reaching the end
@@ -339,12 +359,14 @@ namespace PersistentHashing
             {
                 return false;
             }
+            headerPointer->DistanceSum -= GetDistance(emptyRecordPointer) - 1;
             byte* currentRecordPointer = emptyRecordPointer;
             while (true)
             {
                 /*
                  * shift backward all entries following the entry to delete until either find an empty slot, 
-                 * or a record with a distance of 1  http://codecapsule.com/2013/11/17/robin-hood-hashing-backward-shift-deletion/
+                 * or a record with a distance of 0 (1 in our case)
+                 * http://codecapsule.com/2013/11/17/robin-hood-hashing-backward-shift-deletion/
                  */
                 currentRecordPointer += recordSize;
                 if (currentRecordPointer >= endTablePointer) // start from begining when reaching the end
@@ -360,6 +382,7 @@ namespace PersistentHashing
                 SetKey(emptyRecordPointer, GetKey(currentRecordPointer));
                 SetValue(emptyRecordPointer, GetValue(currentRecordPointer));
                 SetDistance(emptyRecordPointer, (short)(distance - 1));
+                headerPointer->DistanceSum--;
                 emptyRecordPointer = currentRecordPointer;
             }
         }
@@ -367,7 +390,7 @@ namespace PersistentHashing
         private byte* FindRecord(long initialSlotIndex, TKey key)
         {
             byte* recordPointer = GetRecordPointer(initialSlotIndex);
-            bool isEndTableReached = false;
+            int distance = 1;
             while (true)
             {
                 if (GetDistance(recordPointer) == 0) return null;
@@ -378,10 +401,9 @@ namespace PersistentHashing
                 recordPointer += recordSize;
                 if (recordPointer >= endTablePointer)
                 {
-                    if (isEndTableReached) return null;
                     recordPointer = tablePointer;
-                    isEndTableReached = true;
                 }
+                if (distance++ > MaxAllowedDistance) throw new InvalidOperationException("Reached MaxAllowedDistance");
             }
         }
 
@@ -433,7 +455,7 @@ namespace PersistentHashing
         {
             if (Count > 0)
             {
-                Memory.ZeroMemory(new IntPtr(tablePointer), new IntPtr(recordSize * slotCount));
+                Memory.ZeroMemory(tablePointer, recordSize * slotCount);
                 Count = 0;
             }
         }
