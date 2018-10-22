@@ -9,7 +9,7 @@ namespace PersistentHashing
 {
     public unsafe class FixedSizeHashTable<TKey, TValue>: IDisposable, IDictionary<TKey, TValue> where TKey:unmanaged where TValue:unmanaged
     {
-        // <key><value-padding><value><distance padding><distance16><slot-padding>
+        // <key><value-padding><value><distance padding><distance16><record-padding>
 
         const int keyOffset = 0;
         int valueOffset;
@@ -344,7 +344,7 @@ namespace PersistentHashing
             {
                 /*
                  * shift backward all entries following the entry to delete until either find an empty slot, 
-                 * or a record with a distance of 1  
+                 * or a record with a distance of 1  http://codecapsule.com/2013/11/17/robin-hood-hashing-backward-shift-deletion/
                  */
                 currentRecordPointer += recordSize;
                 if (currentRecordPointer >= endTablePointer) // start from begining when reaching the end
@@ -431,8 +431,11 @@ namespace PersistentHashing
 
         public void Clear()
         {
-            Memory.ZeroMemory(new IntPtr(tablePointer), new IntPtr(recordSize * slotCount));
-            Count = 0;
+            if (Count > 0)
+            {
+                Memory.ZeroMemory(new IntPtr(tablePointer), new IntPtr(recordSize * slotCount));
+                Count = 0;
+            }
         }
 
         public bool Contains(KeyValuePair<TKey, TValue> item)

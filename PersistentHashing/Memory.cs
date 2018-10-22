@@ -13,8 +13,29 @@ namespace PersistentHashing
     public class Memory
     {
 
-        [DllImport("Kernel32.dll", EntryPoint = "RtlZeroMemory", SetLastError = false)]
-        public static extern void ZeroMemory(IntPtr dest, IntPtr size);
+        public static unsafe void ZeroMemory(byte* destination, long size)
+        {
+            byte* end = destination + size;
+            while (end >= destination + 8)
+            {
+                *(long*)destination = 0L;
+                destination += 8;
+            }
+            if (end >= destination + 4)
+            {
+                *(int*)destination = 0;
+                destination += 4;
+            }
+            if (end >= destination + 2)
+            {
+                *(short*)destination = 0;
+                destination += 2;
+            }
+            if (end >= destination + 1)
+            {
+                *destination = 0;
+            }
+        }
 
         public static unsafe int Compare(void* p1, void* p2, int size)
         {
