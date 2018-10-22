@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -33,6 +34,12 @@ namespace PersistentHashing
         internal readonly byte* endTablePointer;
         private readonly int bits;
 
+        public readonly ThreadSafety ThreadSafety;
+        private int syncObjectCount;
+        private object[] syncObjects;
+        private int maxLocksPerOperation;
+
+        
 
         /// <summary>
         /// Max distance ever seen in the hash table. 
@@ -57,7 +64,7 @@ namespace PersistentHashing
 
 
 
-        public StaticFixedSizeHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
+        public StaticFixedSizeHashTable(string filePath, long capacity, ThreadSafety threadSafety, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
         {
             this.isAligned = isAligned;
             this.hashFunction = hashFunction;
@@ -67,6 +74,7 @@ namespace PersistentHashing
             slotCount = (long) Bits.NextPowerOf2(capacity);
             mask = (long) slotCount - 1L;
             bits = Bits.MostSignificantBit(slotCount);
+            this.ThreadSafety = threadSafety;
 
             var fileSize = (long) sizeof(StaticFixedSizeHashTableFileHeader) +  slotCount * recordSize;
             fileSize += (Constants.AllocationGranularity - (fileSize & (Constants.AllocationGranularity - 1))) & (Constants.AllocationGranularity - 1);
@@ -90,6 +98,41 @@ namespace PersistentHashing
             }
             tablePointer = fileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
             endTablePointer = tablePointer + recordSize * slotCount;
+        }
+
+        private void InitializeSynchronization()
+        {
+            if (this.ThreadSafety == ThreadSafety.Unsafe) return;
+            /*
+             According to the Birthday problem and using the Square approximation
+             p(n) = n^2/2/m. where p is the probalitity, n is the number of people and m is the number of days in a year.
+             m = n^2/2/p(n)
+             syncObjectCount maps to the number of days in a year, 
+             Environment.ProcessorCount maps to number of people
+             and we want a probability of 1/8 that a thread gets blocked
+            */
+            syncObjectCount =  Environment.ProcessorCount * Environment.ProcessorCount >> 4;
+
+            // but we need a power of two
+            if (Bits.IsPowerOfTwo(syncObjectCount) == false) syncObjectCount = Bits.NextPowerOf2(syncObjectCount);
+
+            // we want at least 4 slots per sync object, so that most of the time (when distance <= 3) we only need to lock one sync object
+            long slotsPerSyncObject = Math.Max(slotCount / syncObjectCount, 4);
+
+            // We need to use an array of maxLocksPerOperations booleans in each operation.
+            // We are going to stackalloc that array, therefore it should be small, a maximum of 128 seems to be reasonable.
+            // and it must be at least 1.
+            maxLocksPerOperation = Math.Max(Math.Min((int) (MaxAllowedDistance / slotsPerSyncObject),  128), 1);
+
+            // recalc values with constraints applied 
+            slotsPerSyncObject = MaxAllowedDistance / maxLocksPerOperation;
+            syncObjectCount = (int) (slotCount / slotsPerSyncObject);
+            maxLocksPerOperation = maxLocksPerOperation + 1;
+
+            Debug.Assert(maxLocksPerOperation * slotsPerSyncObject > MaxAllowedDistance);
+
+            syncObjects = new object[syncObjectCount];
+            for (int i = 0; i < syncObjectCount; i++) syncObjects[i] = new object();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

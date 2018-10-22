@@ -48,23 +48,27 @@ Here you have some benchmarks results comparing `Dictionary` and `StaticFixedSiz
 
 
 ```
-Dictionary sequential access benchmark
-Added 10,000,000 items to Dictionary in 00:00:00.1778698
- 
-Dictionary random access benchmark
-Added 10,000,000 items to Dictionary in 00:00:02.2427423
- 
-HashTable sequencial access benchmark
-Added 10,000,000 items to HashTable in 00:00:00.2956129
-HashTable MaxDistance:  1
-HashTable flushed in 00:00:00.3712881
-Read 10,000,000 items from HashTable in 00:00:00.2086666
- 
-HashTable random access benchmark
-Added 10,000,000 items to HashTable in 00:00:02.1242235
-HashTable MaxDistance:  11
-HashTable flushed in 00:00:00.6129888
-Read 10,000,000 items from HashTable in 00:00:01.4045045
+Dictionary sequential access
+Added 10,000,000 items to Dictionary in 00:00:00.2661790
+Read 10,000,000 items from HashTable in 00:00:00.1848652
+
+Dictionary random access
+Added 10,000,000 items to Dictionary in 00:00:02.4767011
+Read 10,000,000 items from Dictionary in 00:00:02.1444105
+
+StaticFixedSizeHashTable sequencial access
+Added 10,000,000 items to HashTable in 00:00:00.3919535
+HashTable MaxDistance:  0
+HashTable MeanDistance:  0.0
+HashTable flushed in 00:00:00.3573758
+Read 10,000,000 items from HashTable in 00:00:00.2249386
+
+StaticFixedSizeHashTable random access
+Added 10,000,000 items to HashTable in 00:00:02.2854182
+HashTable MaxDistance:  10
+HashTable MeanDistance:  0.7
+HashTable flushed in 00:00:00.6148517
+Read 10,000,000 items from HashTable in 00:00:01.8649375
 ```
 
 

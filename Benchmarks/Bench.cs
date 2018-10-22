@@ -17,15 +17,15 @@ namespace Benchmarks
         {
             Func<IEnumerable<string>>[] benchmarFunctions = new Func<IEnumerable<string>>[]
             {
-                //BenchmarkDictionarySequential, BenchmarkDictionaryRandom, BenchmarkHashTableSequential, BenchmarkHashTableRandom,
-                //BenchmarkLock, BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
+                BenchmarkDictionarySequential, BenchmarkDictionaryRandom, BenchmarkStaticFixedSizeHashTableSequential, BenchmarkStaticFixedSizeHashTableRandom,
+                //BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
                 //BenchmarkManualResetEvent,
-                BenchmarkVoid,
-                BenchmarkVoid,
-                BenchmarkMonitor,
-                BenchmarkMonitor,
-                BenchmarkSpinLatch,
-                BenchmarkSpinLatch
+                //BenchmarkVoid,
+                //BenchmarkVoid,
+                //BenchmarkMonitor,
+                //BenchmarkMonitor,
+                //BenchmarkSpinLatch,
+                //BenchmarkSpinLatch
             };
 
             // warm up
@@ -95,6 +95,11 @@ namespace Benchmarks
             var dic = new Dictionary<int, int>(n);
             yield return "Dictionary sequential access";
             yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) => dic.Add(i, i));
+            yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
+            {
+                dic.TryGetValue(i, out int v);
+                if (v != i) throw new InvalidOperationException("Test failed");
+            });
         }
 
 
@@ -113,19 +118,25 @@ namespace Benchmarks
                 } while (dic.ContainsKey(x));
                 dic.Add(x, x);
             });
-
+            rnd = new Random(0);
+            yield return BenchmarkAction($"Read {n:0,0} items from Dictionary", i =>
+            {
+                long key = rnd.Next();
+                dic.TryGetValue(key, out long value);
+                if (value != key) throw new InvalidOperationException("Test failed");
+            });
         }
 
-        static IEnumerable<string> BenchmarkHashTableRandom()
+        static IEnumerable<string> BenchmarkStaticFixedSizeHashTableRandom()
         {
             //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
 
             var rnd = new Random(0);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Unsafe, key => key, null, false))
             {
-                yield return "FixedSizeHashTable random access benchmark";
+                yield return "StaticFixedSizeHashTable random access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) =>
                 {
                     long x;
@@ -136,6 +147,7 @@ namespace Benchmarks
                     hashTable.Add(x, x);
                 });
                 yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";
+                yield return $"HashTable MeanDistance:  { hashTable.MeanDistance:0.0}";
                 yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
                 rnd = new Random(0);
                 yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
@@ -147,16 +159,17 @@ namespace Benchmarks
             }
         }
 
-        static IEnumerable<string> BenchmarkHashTableSequential()
+        static IEnumerable<string> BenchmarkStaticFixedSizeHashTableSequential()
         {
             //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Unsafe, key => key, null, false))
             {
-                yield return "FixedSizeHashTable sequencial access benchmark";
+                yield return "StaticFixedSizeHashTable sequencial access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => hashTable.Add(i, i));
                 yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";
+                yield return $"HashTable MeanDistance:  { hashTable.MeanDistance:0.0}";
                 yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
                 yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
                 {
@@ -165,26 +178,6 @@ namespace Benchmarks
                 });
             }
         }
-
-
-        static IEnumerable<string> BenchmarkHashTable(Func<long, long> hashFunction, Action<StaticFixedSizeHashTable<long, long>, int> addAction)
-        {
-            string filePath = "Int64Int64.hash-table";
-            if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, hashFunction, null, false))
-            {
-                yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => addAction(hashTable, i));
-                yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";
-                yield return BenchmarkAction("HashTable flushed", _ => hashTable.Flush(), 1);
-                yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
-                {
-                    hashTable.TryGetValue(i, out long v);
-                    if (v != i) throw new InvalidOperationException("Test failed");
-                });
-            }
-        }
-
-
 
         static IEnumerable<string> BenchmarkReaderWriterLockSlim()
         {
@@ -194,6 +187,11 @@ namespace Benchmarks
             {
                 readerWriterLock.EnterReadLock();
                 readerWriterLock.ExitReadLock();
+            });
+            yield return BenchmarkAction($"Executed EnterWriteLock and ExitWriteLock {n:0,0} times", _ =>
+            {
+                readerWriterLock.EnterWriteLock();
+                readerWriterLock.EnterWriteLock();
             });
         }
 
