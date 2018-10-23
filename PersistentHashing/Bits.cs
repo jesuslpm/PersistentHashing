@@ -8,7 +8,7 @@ namespace PersistentHashing
     /*
      * This class is taken from RavenDB, https://github.com/ravendb/ravendb
      * which is licensed as AGPLv3, https://github.com/ravendb/ravendb/blob/v4.1/LICENSE
-     * Permission to use this code is pending.
+     * However most of the code is taken from http://graphics.stanford.edu/~seander/bithacks.html
      */
     public static class Bits
     {

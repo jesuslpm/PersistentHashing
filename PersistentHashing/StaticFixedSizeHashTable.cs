@@ -456,18 +456,7 @@ namespace PersistentHashing
             int lockIndex = 0;
             while (true)
             {
-                if (locks != null)
-                {
-                    if (remainingSlotsInSyncObject == 0)
-                    {
-                        Monitor.Enter(syncObjects[slotCount << slotsPerSyncObjectBits], ref locks[lockIndex++]);
-                        remainingSlotsInSyncObject = slotsPerSyncObject - slotIndex & slotsPerSyncObjectMask - 1;
-                    }
-                    else
-                    {
-                        remainingSlotsInSyncObject--;
-                    }
-                }
+                LockIfNeeded(locks, ref remainingSlotsInSyncObject, slotIndex, ref lockIndex);
                 if (GetDistance(recordPointer) == 0) return null;
                 if (comparer.Equals(key, GetKey(GetKeyPointer(recordPointer))))
                 {
@@ -481,6 +470,24 @@ namespace PersistentHashing
                     slotIndex = 0;
                 }
                 if (distance++ > MaxAllowedDistance) throw new InvalidOperationException("Reached MaxAllowedDistance");
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void LockIfNeeded(bool* locks, ref long remainingSlotsInSyncObject, long slotIndex, ref int lockIndex)
+        {
+            if (locks != null)
+            {
+                if (remainingSlotsInSyncObject == 0)
+                {
+                    if (locks[lockIndex]==false) Monitor.Enter(syncObjects[slotCount << slotsPerSyncObjectBits], ref locks[lockIndex]);
+                    lockIndex++;
+                    remainingSlotsInSyncObject = slotsPerSyncObject - slotIndex & slotsPerSyncObjectMask - 1;
+                }
+                else
+                {
+                    remainingSlotsInSyncObject--;
+                }
             }
         }
 
