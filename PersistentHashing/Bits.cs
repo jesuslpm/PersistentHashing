@@ -393,5 +393,11 @@ namespace PersistentHashing
         {
             return value != 0 && (value & (value - 1)) == 0;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsPowerOfTwo(long value)
+        {
+            return value != 0 && (value & (value - 1)) == 0;
+        }
     }
 }

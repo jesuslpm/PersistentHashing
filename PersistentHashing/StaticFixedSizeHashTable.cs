@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 
 namespace PersistentHashing
 {
@@ -12,7 +13,7 @@ namespace PersistentHashing
     {
         // <key><value-padding><value><distance padding><distance16><record-padding>
 
-        public const short MaxAllowedDistance = 1024;
+        public const short MaxAllowedDistance = 512;
         const int keyOffset = 0;
         int valueOffset;
         int distanceOffset;
@@ -38,6 +39,9 @@ namespace PersistentHashing
         private int syncObjectCount;
         private object[] syncObjects;
         private int maxLocksPerOperation;
+        private long slotsPerSyncObject;
+        private int slotsPerSyncObjectBits;
+        private long slotsPerSyncObjectMask;
 
         
 
@@ -55,6 +59,8 @@ namespace PersistentHashing
         private readonly Func<TKey, long> hashFunction;
         private readonly IEqualityComparer<TKey> comparer;
         private readonly IEqualityComparer<TValue> valueComparer;
+        private readonly long Capacity;
+
 
         public long Count
         {
@@ -71,8 +77,10 @@ namespace PersistentHashing
             this.comparer = comparer ?? EqualityComparer<TKey>.Default;
             this.valueComparer = EqualityComparer<TValue>.Default;
             CalculateOffsetsAndSizes();
-            slotCount = (long) Bits.NextPowerOf2(capacity);
-            mask = (long) slotCount - 1L;
+            slotCount = Math.Max(capacity + capacity/8 + capacity/16, 4);
+            slotCount = Bits.IsPowerOfTwo(slotCount) ? slotCount : Bits.NextPowerOf2(slotCount);
+            this.Capacity = slotCount - slotCount/8 - capacity/16; // conservative max load factor = 81.25%
+            mask = slotCount - 1L;
             bits = Bits.MostSignificantBit(slotCount);
             this.ThreadSafety = threadSafety;
 
@@ -86,6 +94,7 @@ namespace PersistentHashing
 
             fileBaseAddress = mappingSession.GetBaseAddress();
             headerPointer = (StaticFixedSizeHashTableFileHeader*)fileBaseAddress;
+
 
             if (isNew)
             {
@@ -107,28 +116,36 @@ namespace PersistentHashing
              According to the Birthday problem and using the Square approximation
              p(n) = n^2/2/m. where p is the probalitity, n is the number of people and m is the number of days in a year.
              m = n^2/2/p(n)
-             syncObjectCount maps to the number of days in a year, 
-             Environment.ProcessorCount maps to number of people
-             and we want a probability of 1/8 that a thread gets blocked
+             syncObjectCount maps to the number of days in a year (m), 
+             numer of threads accessing hash table maps to number of people (n).
+             we are guessing number of threads = Environment.ProcessorCount * 2  
+             and we want a probability of 1/8 that a thread gets blocked.
+
+             we are constraining syncObjectCount to be between 64 and 8192
             */
-            syncObjectCount =  Environment.ProcessorCount * Environment.ProcessorCount >> 4;
+            syncObjectCount = Math.Min(Math.Max( Environment.ProcessorCount * Environment.ProcessorCount * 4, 64), 8192);
 
             // but we need a power of two
             if (Bits.IsPowerOfTwo(syncObjectCount) == false) syncObjectCount = Bits.NextPowerOf2(syncObjectCount);
 
             // we want at least 4 slots per sync object, so that most of the time (when distance <= 3) we only need to lock one sync object
-            long slotsPerSyncObject = Math.Max(slotCount / syncObjectCount, 4);
+            slotsPerSyncObject = Math.Max(slotCount / syncObjectCount, 4);
 
-            // We need to use an array of maxLocksPerOperations booleans in each operation.
-            // We are going to stackalloc that array, therefore it should be small, a maximum of 128 seems to be reasonable.
+            // We need to use an array of maxLocksPerOperation booleans in each operation.
+            // We are going to stackalloc that array, therefore it should be small, a maximum of 256 seems to be reasonable.
             // and it must be at least 1.
-            maxLocksPerOperation = Math.Max(Math.Min((int) (MaxAllowedDistance / slotsPerSyncObject),  128), 1);
+            maxLocksPerOperation = Math.Max(Math.Min((int) (MaxAllowedDistance / slotsPerSyncObject),  256), 1);
 
             // recalc values with constraints applied 
             slotsPerSyncObject = MaxAllowedDistance / maxLocksPerOperation;
-            syncObjectCount = (int) (slotCount / slotsPerSyncObject);
-            maxLocksPerOperation = maxLocksPerOperation + 1;
+            syncObjectCount = (int)(slotCount / slotsPerSyncObject);
 
+            Debug.Assert(Bits.IsPowerOfTwo(slotsPerSyncObject));
+            slotsPerSyncObjectMask = slotsPerSyncObject - 1;
+            slotsPerSyncObjectBits = Bits.MostSignificantBit(slotsPerSyncObject);
+
+            // we need to cover MaxAllowedDistante slots in maxLocksPerOperation locks
+            maxLocksPerOperation = maxLocksPerOperation + 1;
             Debug.Assert(maxLocksPerOperation * slotsPerSyncObject > MaxAllowedDistance);
 
             syncObjects = new object[syncObjectCount];
@@ -430,21 +447,38 @@ namespace PersistentHashing
             }
         }
 
-        private byte* FindRecord(long initialSlotIndex, TKey key)
+        private byte* FindRecord(long initialSlotIndex, TKey key, bool* locks = null)
         {
             byte* recordPointer = GetRecordPointer(initialSlotIndex);
             int distance = 1;
+            long remainingSlotsInSyncObject = 0;
+            long slotIndex = initialSlotIndex;
+            int lockIndex = 0;
             while (true)
             {
+                if (locks != null)
+                {
+                    if (remainingSlotsInSyncObject == 0)
+                    {
+                        Monitor.Enter(syncObjects[slotCount << slotsPerSyncObjectBits], ref locks[lockIndex++]);
+                        remainingSlotsInSyncObject = slotsPerSyncObject - slotIndex & slotsPerSyncObjectMask - 1;
+                    }
+                    else
+                    {
+                        remainingSlotsInSyncObject--;
+                    }
+                }
                 if (GetDistance(recordPointer) == 0) return null;
                 if (comparer.Equals(key, GetKey(GetKeyPointer(recordPointer))))
                 {
                     return recordPointer;
                 }
                 recordPointer += recordSize;
+                slotIndex++;
                 if (recordPointer >= endTablePointer)
                 {
                     recordPointer = tablePointer;
+                    slotIndex = 0;
                 }
                 if (distance++ > MaxAllowedDistance) throw new InvalidOperationException("Reached MaxAllowedDistance");
             }
