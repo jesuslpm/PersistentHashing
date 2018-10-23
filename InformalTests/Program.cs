@@ -17,7 +17,7 @@ namespace InformalTests
 
         static unsafe void Main(string[] args)
         {
-
+            var locks = stackalloc bool[0];
             //BenchMark();
             Console.WriteLine("Press enter to exit..");
             Console.ReadLine();

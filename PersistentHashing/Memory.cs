@@ -15,6 +15,7 @@ namespace PersistentHashing
 
         public static unsafe void ZeroMemory(byte* destination, long size)
         {
+            if (size == 0) return;
             byte* end = destination + size;
             while (end >= destination + 8)
             {

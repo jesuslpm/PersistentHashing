@@ -1,5 +1,6 @@
 ﻿using PersistentHashing;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -92,10 +93,10 @@ namespace Benchmarks
 
         static IEnumerable<string> BenchmarkDictionarySequential()
         {
-            var dic = new Dictionary<int, int>(n);
-            yield return "Dictionary sequential access";
-            yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) => dic.Add(i, i));
-            yield return BenchmarkAction($"Read {n:0,0} items from HashTable", i =>
+            var dic = new ConcurrentDictionary<int, int>(Environment.ProcessorCount*2, n);
+            yield return "Concurrent Dictionary single thread sequential access";
+            yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) => dic.TryAdd(i, i));
+            yield return BenchmarkAction($"Read {n:0,0} items from Dictionary", i =>
             {
                 dic.TryGetValue(i, out int v);
                 if (v != i) throw new InvalidOperationException("Test failed");
@@ -106,9 +107,9 @@ namespace Benchmarks
 
         static IEnumerable<string> BenchmarkDictionaryRandom()
         {
-            var dic = new Dictionary<long, long>(n);
+            var dic = new ConcurrentDictionary<long, long>(Environment.ProcessorCount * 2, n); 
             var rnd = new Random(0);
-            yield return "Dictionary random access";
+            yield return "Concurrent Dictionary single thread random access ";
             yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) =>
             {
                 long x;
@@ -116,7 +117,7 @@ namespace Benchmarks
                 {
                     x = rnd.Next();
                 } while (dic.ContainsKey(x));
-                dic.Add(x, x);
+                dic.TryAdd(x, x);
             });
             rnd = new Random(0);
             yield return BenchmarkAction($"Read {n:0,0} items from Dictionary", i =>
@@ -134,15 +135,16 @@ namespace Benchmarks
             if (File.Exists(filePath)) File.Delete(filePath);
 
             var rnd = new Random(0);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Unsafe, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Safe, key => key, null, false))
             {
-                yield return "StaticFixedSizeHashTable random access";
+                yield return "StaticFixedSizeHashTable thread safe single thread random access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) =>
                 {
                     long x;
                     do
                     {
                         x = rnd.Next();
+                        long y = x;
                     } while (hashTable.ContainsKey(x));
                     hashTable.Add(x, x);
                 });
@@ -164,9 +166,9 @@ namespace Benchmarks
             //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Unsafe, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Safe, key => key, null, false))
             {
-                yield return "StaticFixedSizeHashTable sequencial access";
+                yield return "StaticFixedSizeHashTable thread safe single thread sequencial access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => hashTable.Add(i, i));
                 yield return $"HashTable MaxDistance:  { hashTable.MaxDistance}";
                 yield return $"HashTable MeanDistance:  { hashTable.MeanDistance:0.0}";
