@@ -55,5 +55,18 @@ namespace PersistentHashing
             }
             return newMapping.GetBaseAddress();
         }
+
+        public void WarmUp()
+        {
+            byte* baseAddress = GetBaseAddress();
+            void* endPointer = baseAddress + mapper.Length;
+            long* pointer = (long*)baseAddress;
+            long value;
+            while (pointer < endPointer )
+            {
+                value = *pointer;
+                pointer += 512;
+            }
+        }
     }
 }

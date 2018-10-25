@@ -12,13 +12,18 @@ namespace Benchmarks
 {
     static class Bench
     {
-        const int n = 10_000_000;
+        const int n = 100_000_000;
+
+        private static readonly int ThreadCount = Environment.ProcessorCount;
 
         public static void BenchMark()
         {
             Func<IEnumerable<string>>[] benchmarFunctions = new Func<IEnumerable<string>>[]
             {
-                BenchmarkDictionarySequential, BenchmarkDictionaryRandom, BenchmarkStaticFixedSizeHashTableSequential, BenchmarkStaticFixedSizeHashTableRandom,
+                //BenchmarkDictionarySequential, BenchmarkDictionaryRandom,
+                //BenchmarkStaticFixedSizeHashTableSequential, BenchmarkStaticFixedSizeHashTableRandom,
+                BenchmarkStaticFixedSizeHashTableMultiThreaded,
+                BenchmarkConcurrentDictionaryMultiThreaded,
                 //BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
                 //BenchmarkManualResetEvent,
                 //BenchmarkVoid,
@@ -93,7 +98,7 @@ namespace Benchmarks
 
         static IEnumerable<string> BenchmarkDictionarySequential()
         {
-            var dic = new ConcurrentDictionary<int, int>(Environment.ProcessorCount*2, n);
+            var dic = new ConcurrentDictionary<int, int>(ThreadCount, n);
             yield return "Concurrent Dictionary single thread sequential access";
             yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) => dic.TryAdd(i, i));
             yield return BenchmarkAction($"Read {n:0,0} items from Dictionary", i =>
@@ -107,7 +112,7 @@ namespace Benchmarks
 
         static IEnumerable<string> BenchmarkDictionaryRandom()
         {
-            var dic = new ConcurrentDictionary<long, long>(Environment.ProcessorCount * 2, n); 
+            var dic = new ConcurrentDictionary<long, long>(ThreadCount, n); 
             var rnd = new Random(0);
             yield return "Concurrent Dictionary single thread random access ";
             yield return BenchmarkAction($"Added {n:0,0} items to Dictionary", (i) =>
@@ -159,6 +164,74 @@ namespace Benchmarks
                     if (value != key) throw new InvalidOperationException("Test failed");
                 });
             }
+        }
+
+        static IEnumerable<string> BenchmarkConcurrentDictionaryMultiThreaded()
+        {
+            yield return $"ConcurrentDictionary {ThreadCount} threads";
+            var watch = Stopwatch.StartNew();
+            var tasks = new Task[ThreadCount];
+            var dictionary = new ConcurrentDictionary<long, long>(ThreadCount, n);
+            for (int i = 0; i < ThreadCount; i++)
+            {
+                tasks[i] = DictionaryMultithreaded(ThreadCount, dictionary, i);
+            }
+            Task.WaitAll(tasks);
+            watch.Stop();
+            yield return $"Added {n:0,0} items to HashTable in {watch.Elapsed}";
+        }
+
+        static IEnumerable<string> BenchmarkStaticFixedSizeHashTableMultiThreaded()
+        {
+            string filePath = "Int64Int64.HashTable";
+            if (File.Exists(filePath)) File.Delete(filePath);
+            yield return $"StaticFixedSizeHashTable {ThreadCount} threads";
+            var watch = Stopwatch.StartNew();
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Safe, key => key, null, false))
+            {
+                //hashTable.WarmUp();
+                //watch.Stop();
+                //yield return $"Warmed up in {watch.Elapsed}";
+                //watch.Restart();
+                var tasks = new Task[ThreadCount];
+                for (int i= 0; i < ThreadCount; i++)
+                {
+                    tasks[i] = HashTableRandomAccess(ThreadCount, hashTable, i);
+                }
+                Task.WaitAll(tasks);
+            }
+            watch.Stop();
+            yield return $"Added {n:0,0} items to HashTable in {watch.Elapsed}";
+        }
+
+        private static Task HashTableRandomAccess(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
+        {
+           return Task.Factory.StartNew(() =>
+           {
+               var rnd = new Random((int)((long)i * (long)n / Environment.ProcessorCount));
+               int count = n / threadCount;
+               int start = i * count;
+               int end = start + count;
+               for (int j = start; j < end; j++)
+               {
+                   hashTable.TryAdd(j, j);
+               }
+           }, TaskCreationOptions.LongRunning);
+        }
+
+        private static Task DictionaryMultithreaded(int threadCount, ConcurrentDictionary<long, long> dic, int i)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                var rnd = new Random((int)((long)i * (long)n / Environment.ProcessorCount));
+                int count = n / threadCount;
+                int start = i * count;
+                int end = start + count;
+                for (int j = start; j < end; j++)
+                {
+                    dic.TryAdd(j, j);
+                }
+            }, TaskCreationOptions.LongRunning);
         }
 
         static IEnumerable<string> BenchmarkStaticFixedSizeHashTableSequential()

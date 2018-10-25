@@ -17,7 +17,7 @@ namespace PersistentHashing
         public int KeySize;
         public int ValueSize;
         public int RecordSize;
-        public int MaxDistance;
+        public volatile int MaxDistance;
         public bool IsAligned;
         public fixed byte Reserved[7];
     }

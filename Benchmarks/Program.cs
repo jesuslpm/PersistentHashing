@@ -11,8 +11,8 @@ namespace Benchmarks
         static void Main(string[] args)
         {
             Bench.BenchMark();
-            Console.WriteLine("Press enter to exit..");
-            Console.ReadLine();
+            //Console.WriteLine("Press enter to exit..");
+            //Console.ReadLine();
         }
         
     }

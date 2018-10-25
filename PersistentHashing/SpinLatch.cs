@@ -12,10 +12,9 @@ namespace PersistentHashing
      */
     public static class SpinLatch
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Enter(ref int locked, ref bool taken)
         {
-
-            if (taken) throw new ArgumentException("taken must me false", nameof(taken));
             SpinWait spinWait = new SpinWait();
             while (true)
             {
