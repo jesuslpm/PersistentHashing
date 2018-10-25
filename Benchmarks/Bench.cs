@@ -174,11 +174,19 @@ namespace Benchmarks
             var dictionary = new ConcurrentDictionary<long, long>(ThreadCount, n);
             for (int i = 0; i < ThreadCount; i++)
             {
-                tasks[i] = DictionaryMultithreaded(ThreadCount, dictionary, i);
+                tasks[i] = DictionaryTryAdd(ThreadCount, dictionary, i);
             }
             Task.WaitAll(tasks);
             watch.Stop();
-            yield return $"Added {n:0,0} items to HashTable in {watch.Elapsed}";
+            yield return $"{n:0,0} ConcurrentDictionary.TryAdd calls in {watch.Elapsed}";
+            watch.Restart();
+            for (int i = 0; i < ThreadCount; i++)
+            {
+                tasks[i] = DictionaryTryGet(ThreadCount, dictionary, i);
+            }
+            Task.WaitAll(tasks);
+            watch.Stop();
+            yield return $"{n:0,0} ConcurrentDictionary.TryGetValue calls in {watch.Elapsed}";
         }
 
         static IEnumerable<string> BenchmarkStaticFixedSizeHashTableMultiThreaded()
@@ -196,19 +204,28 @@ namespace Benchmarks
                 var tasks = new Task[ThreadCount];
                 for (int i= 0; i < ThreadCount; i++)
                 {
-                    tasks[i] = HashTableRandomAccess(ThreadCount, hashTable, i);
+                    tasks[i] = HashTableTryAdd(ThreadCount, hashTable, i);
                 }
                 Task.WaitAll(tasks);
+                watch.Stop();
+                yield return $"{n:0,0} HashTable.TryAdd calls in {watch.Elapsed}";
+                watch.Restart();
+                for (int i = 0; i < ThreadCount; i++)
+                {
+                    tasks[i] = HashTableTryGet(ThreadCount, hashTable, i);
+                }
+                Task.WaitAll(tasks);
+                watch.Stop();
+                yield return $"{n:0,0} HashTable.TryGetValue calls in {watch.Elapsed}";
             }
-            watch.Stop();
-            yield return $"Added {n:0,0} items to HashTable in {watch.Elapsed}";
+           
         }
 
-        private static Task HashTableRandomAccess(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
+        private static Task HashTableTryAdd(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
         {
            return Task.Factory.StartNew(() =>
            {
-               var rnd = new Random((int)((long)i * (long)n / Environment.ProcessorCount));
+               var rnd = new Random((int)((long)i * (long)n / threadCount));
                int count = n / threadCount;
                int start = i * count;
                int end = start + count;
@@ -219,17 +236,48 @@ namespace Benchmarks
            }, TaskCreationOptions.LongRunning);
         }
 
-        private static Task DictionaryMultithreaded(int threadCount, ConcurrentDictionary<long, long> dic, int i)
+
+        private static Task HashTableTryGet(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
         {
             return Task.Factory.StartNew(() =>
             {
-                var rnd = new Random((int)((long)i * (long)n / Environment.ProcessorCount));
+                var rnd = new Random((int)((long)i * (long)n / threadCount));
+                int count = n / threadCount;
+                int start = i * count;
+                int end = start + count;
+                for (int j = start; j < end; j++)
+                {
+                    hashTable.TryGetValue(j, out long v);
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
+
+        private static Task DictionaryTryAdd(int threadCount, ConcurrentDictionary<long, long> dic, int i)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                var rnd = new Random((int)((long)i * (long)n / threadCount));
                 int count = n / threadCount;
                 int start = i * count;
                 int end = start + count;
                 for (int j = start; j < end; j++)
                 {
                     dic.TryAdd(j, j);
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
+
+        private static Task DictionaryTryGet(int threadCount, ConcurrentDictionary<long, long> dic, int i)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                var rnd = new Random((int)((long)i * (long)n / threadCount));
+                int count = n / threadCount;
+                int start = i * count;
+                int end = start + count;
+                for (int j = start; j < end; j++)
+                {
+                    dic.TryGetValue(j, out long v);
                 }
             }, TaskCreationOptions.LongRunning);
         }

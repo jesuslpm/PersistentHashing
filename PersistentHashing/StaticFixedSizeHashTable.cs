@@ -39,7 +39,7 @@ namespace PersistentHashing
 #if SPINLATCH
         internal int[] syncObjects;
 #else
-        internal object[] syncObjects;
+        internal SyncObject[] syncObjects;
 #endif
         private int maxLocksPerOperation;
         private long chunkSize;
@@ -173,8 +173,8 @@ namespace PersistentHashing
             syncObjects = new int[syncObjectCount];
             for (int i = 0; i < syncObjectCount; i++) syncObjects[i] = 0;
 #else
-            syncObjects = new object[syncObjectCount];
-            for (int i = 0; i < syncObjectCount; i++) syncObjects[i] = new object();
+            syncObjects = new SyncObject[syncObjectCount];
+            for (int i = 0; i < syncObjectCount; i++) syncObjects[i] = new SyncObject();
 #endif
         }
 
@@ -637,8 +637,10 @@ namespace PersistentHashing
                     SpinLatch.Enter(ref syncObjects[context.CurrentSlot >> chunkBits],
                         ref context.TakenLocks[context.LockIndex]);
 #else
-                    Monitor.Enter(syncObjects[context.CurrentSlot >> chunkBits], 
+                    var syncObject = syncObjects[context.CurrentSlot >> chunkBits];
+                    Monitor.Enter(syncObject, 
                         ref context.TakenLocks[context.LockIndex]);
+                    syncObject.IsWriterInProgress = true;
 #endif
                 }
                 context.RemainingSlotsInChunk = chunkSize - (context.CurrentSlot & chunkMask) - 1;
@@ -661,6 +663,9 @@ namespace PersistentHashing
 #if SPINLATCH
                 SpinLatch.Exit(ref syncObjects[chunkIndex]);
 #else
+                var syncObject = syncObjects[chunkIndex];
+                unchecked { syncObject.Version++; }
+                syncObject.IsWriterInProgress = false;
                 Monitor.Exit(syncObjects[chunkIndex]);
 #endif
 
