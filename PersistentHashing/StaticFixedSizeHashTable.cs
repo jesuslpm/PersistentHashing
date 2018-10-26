@@ -359,6 +359,28 @@ namespace PersistentHashing
             }
         }
 
+        public bool TryGetValueNonBlocking(TKey key, out TValue value)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    value = default;
+                    return false;
+                }
+                value = GetValue(GetValuePointer(recordPointer));
+                return true;
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
         public void Add(TKey key, TValue value)
         {
             if (!TryAdd(key, value))
@@ -558,6 +580,63 @@ namespace PersistentHashing
             finally
             {
                 ReleaseLocks(ref context);
+            }
+        }
+
+        private unsafe struct NonBlockingOperationContext
+        {
+            public long InitialSlot;
+            public long RemainingSlotsInChunk;
+            public long CurrentSlot;
+            public int* Versions;
+            public int VersionIndex;
+            public TKey Key;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReadVersion(ref NonBlockingOperationContext context)
+        {
+            if (context.Versions == null) return;
+            if (context.RemainingSlotsInChunk == 0)
+            {
+                var syncObject = syncObjects[context.CurrentSlot >> chunkBits];
+                context.Versions[context.VersionIndex] = syncObject.Version;
+                context.RemainingSlotsInChunk = chunkSize - (context.CurrentSlot & chunkMask) - 1;
+                context.VersionIndex++;
+            }
+            else
+            {
+                context.RemainingSlotsInChunk--;
+            }
+        }
+
+        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private byte* FindRecordNonBlocking(ref NonBlockingOperationContext context)
+        {
+            byte* recordPointer = GetRecordPointer(context.InitialSlot);
+            int distance = 1;
+        loop:
+            {
+                ReadVersion(ref context);
+
+                if (GetDistance(recordPointer) == 0) return null;
+                if (comparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer))))
+                {
+                    return recordPointer;
+                }
+                recordPointer += recordSize;
+                context.CurrentSlot++;
+                if (recordPointer >= endTablePointer)
+                {
+                    recordPointer = tablePointer;
+                    context.CurrentSlot = 0;
+                }
+                if (distance > maxAllowedDistance)
+                {
+                    ReachedMaxAllowedDistance();
+                }
+                distance++;
+                goto loop;
             }
         }
 
