@@ -12,7 +12,7 @@ namespace Benchmarks
 {
     static class Bench
     {
-        const int n = 100_000_000;
+        const int n = 40_000_000;
 
         private static readonly int ThreadCount = Environment.ProcessorCount;
 
@@ -209,6 +209,7 @@ namespace Benchmarks
                 Task.WaitAll(tasks);
                 watch.Stop();
                 yield return $"{n:0,0} HashTable.TryAdd calls in {watch.Elapsed}";
+
                 watch.Restart();
                 for (int i = 0; i < ThreadCount; i++)
                 {
@@ -217,6 +218,15 @@ namespace Benchmarks
                 Task.WaitAll(tasks);
                 watch.Stop();
                 yield return $"{n:0,0} HashTable.TryGetValue calls in {watch.Elapsed}";
+
+                watch.Restart();
+                for (int i = 0; i < ThreadCount; i++)
+                {
+                    tasks[i] = HashTableTryGetNonBlocking(ThreadCount, hashTable, i);
+                }
+                Task.WaitAll(tasks);
+                watch.Stop();
+                yield return $"{n:0,0} HashTable.TryGetValueNonBlocking calls in {watch.Elapsed}";
             }
            
         }
@@ -231,7 +241,8 @@ namespace Benchmarks
                int end = start + count;
                for (int j = start; j < end; j++)
                {
-                   hashTable.TryAdd(j, j);
+                   var key = rnd.Next();
+                   hashTable.TryAdd(key, key);
                }
            }, TaskCreationOptions.LongRunning);
         }
@@ -247,7 +258,24 @@ namespace Benchmarks
                 int end = start + count;
                 for (int j = start; j < end; j++)
                 {
-                    hashTable.TryGetValue(j, out long v);
+                    var key = rnd.Next();
+                    hashTable.TryGetValue(key, out long v);
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
+
+        private static Task HashTableTryGetNonBlocking(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                var rnd = new Random((int)((long)i * (long)n / threadCount));
+                int count = n / threadCount;
+                int start = i * count;
+                int end = start + count;
+                for (int j = start; j < end; j++)
+                {
+                    var key = rnd.Next();
+                    hashTable.TryGetValueNonBlocking(key, out long v);
                 }
             }, TaskCreationOptions.LongRunning);
         }
@@ -262,7 +290,8 @@ namespace Benchmarks
                 int end = start + count;
                 for (int j = start; j < end; j++)
                 {
-                    dic.TryAdd(j, j);
+                    var key = rnd.Next();
+                    dic.TryAdd(key, key);
                 }
             }, TaskCreationOptions.LongRunning);
         }
@@ -277,6 +306,7 @@ namespace Benchmarks
                 int end = start + count;
                 for (int j = start; j < end; j++)
                 {
+                    var key = rnd.Next();
                     dic.TryGetValue(j, out long v);
                 }
             }, TaskCreationOptions.LongRunning);

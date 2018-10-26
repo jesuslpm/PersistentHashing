@@ -359,25 +359,41 @@ namespace PersistentHashing
             }
         }
 
-        public bool TryGetValueNonBlocking(TKey key, out TValue value)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsNonBlockingOperationValid(ref NonBlockingOperationContext context)
         {
-            long takenLocks = 0L;
-            var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
-            try
+            if (context.Versions == null) return true;
+            int chunkIndex = (int)(context.InitialSlot >> chunkBits);
+            
+            for (int i=0; i < context.VersionIndex; i++)
             {
-                var recordPointer = FindRecord(ref context);
-                if (recordPointer == null)
+                var syncObject = syncObjects[chunkIndex];
+                if (syncObject.IsWriterInProgress || syncObject.Version != context.Versions[i])
                 {
-                    value = default;
                     return false;
                 }
-                value = GetValue(GetValuePointer(recordPointer));
-                return true;
+                chunkIndex++;
+                if (chunkIndex >= syncObjects.Length) chunkIndex = 0;
             }
-            finally
+            return true;
+        }
+
+        public bool TryGetValueNonBlocking(TKey key, out TValue value)
+        {
+            int* versions = stackalloc int[maxLocksPerOperation];
+            var context = new NonBlockingOperationContext
             {
-                ReleaseLocks(ref context);
+                Versions = versions,
+                InitialSlot = GetInitialSlot(key),
+                Key = key
+            };
+            bool isFound;
+            while (true)
+            {
+                var recordPointer = FindRecordNonBlocking(ref context);
+                isFound = recordPointer != null;
+                value = recordPointer ==  null ? default : GetValue(GetValuePointer(recordPointer));
+                if (IsNonBlockingOperationValid(ref context)) return isFound;
             }
         }
 
@@ -594,30 +610,38 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadVersion(ref NonBlockingOperationContext context)
+        private bool GetIsWriterInProgressAndReadVersion(ref NonBlockingOperationContext context)
         {
-            if (context.Versions == null) return;
+            //if (context.Versions == null) return false;
             if (context.RemainingSlotsInChunk == 0)
             {
                 var syncObject = syncObjects[context.CurrentSlot >> chunkBits];
                 context.Versions[context.VersionIndex] = syncObject.Version;
                 context.RemainingSlotsInChunk = chunkSize - (context.CurrentSlot & chunkMask) - 1;
                 context.VersionIndex++;
+                return syncObject.IsWriterInProgress;
             }
-            else
-            {
-                context.RemainingSlotsInChunk--;
-            }
+            context.RemainingSlotsInChunk--;
+            return false;
         }
 
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte* FindRecordNonBlocking(ref NonBlockingOperationContext context)
         {
+            var spinWait = new SpinWait();
+        start:
+            context.CurrentSlot = context.InitialSlot;
+            context.RemainingSlotsInChunk = 0;
+            context.VersionIndex = 0;
             byte* recordPointer = GetRecordPointer(context.InitialSlot);
             int distance = 1;
         loop:
             {
-                ReadVersion(ref context);
+                if (GetIsWriterInProgressAndReadVersion(ref context))
+                {
+                    spinWait.SpinOnce();
+                    goto start;
+                }
 
                 if (GetDistance(recordPointer) == 0) return null;
                 if (comparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer))))
