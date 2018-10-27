@@ -365,7 +365,7 @@ namespace PersistentHashing
             if (context.Versions == null) return true;
             int chunkIndex = (int)(context.InitialSlot >> chunkBits);
             
-            for (int i=0; i < context.VersionIndex; i++)
+            for (int i=0; i <= context.VersionIndex; i++)
             {
                 var syncObject = syncObjects[chunkIndex];
                 if (syncObject.IsWriterInProgress || syncObject.Version != context.Versions[i])
@@ -429,6 +429,127 @@ namespace PersistentHashing
             }
         }
 
+        public TValue GetOrAdd(TKey key, TValue value)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    RobinHoodAdd(ref context, value);
+                }
+                return value;
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+        public TValue GetOrAdd(TKey key, Func<TKey, TValue> valueFactory)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    var value = valueFactory(key);
+                    RobinHoodAdd(ref context, value);
+                    return value;
+                }
+                return GetValue(GetValuePointer(recordPointer));
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+        public TValue GetOrAdd<TArg>(TKey key, Func<TKey, TArg, TValue> valueFactory, TArg factoryArgument)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    var value = valueFactory(key, factoryArgument);
+                    RobinHoodAdd(ref context, value);
+                    return value;
+                }
+                return GetValue(GetValuePointer(recordPointer));
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+        public bool TryRemove(TKey key, out TValue value)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                byte* emptyRecordPointer = FindRecord(ref context);
+                if (emptyRecordPointer == null)
+                {
+                    value = default;
+                    return false;
+                }
+#if DEBUG
+                Interlocked.Add(ref headerPointer->DistanceSum, 1 - GetDistance(emptyRecordPointer));
+#endif
+                byte* currentRecordPointer = emptyRecordPointer;
+                while (true)
+                {
+                    /*
+                        * shift backward all entries following the entry to delete until either find an empty slot, 
+                        * or a record with a distance of 0 (1 in our case)
+                        * http://codecapsule.com/2013/11/17/robin-hood-hashing-backward-shift-deletion/
+                        */
+
+                    currentRecordPointer += recordSize;
+                    context.CurrentSlot++;
+                    if (currentRecordPointer >= endTablePointer) // start from begining when reaching the end
+                    {
+                        currentRecordPointer = tablePointer;
+                        context.CurrentSlot = 0;
+                    }
+                    LockIfNeeded(ref context);
+                    short distance = GetDistance(currentRecordPointer);
+                    if (distance <= 1)
+                    {
+                        SetDistance(emptyRecordPointer, 0);
+                        value = GetValue(GetValuePointer(currentRecordPointer));
+                        Interlocked.Decrement(ref headerPointer->RecordCount);
+                        return true;
+                    }
+                    SetKey(emptyRecordPointer, GetKey(currentRecordPointer));
+                    SetValue(emptyRecordPointer, GetValue(currentRecordPointer));
+                    SetDistance(emptyRecordPointer, (short)(distance - 1));
+#if DEBUG
+                    Interlocked.Decrement(ref headerPointer->DistanceSum);
+#endif
+                    emptyRecordPointer = currentRecordPointer;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+
         public bool ContainsKey(TKey key)
         {
             long takenLocks = 0L;
@@ -465,6 +586,91 @@ namespace PersistentHashing
             {
                 ReleaseLocks(ref context);
             }
+        }
+
+        public bool TryUpdate(TKey key, TValue newValue, TValue comparisonValue)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    return false;
+                }
+                else
+                {
+                    var value = GetValue(GetValuePointer(recordPointer));
+                    if (valueComparer.Equals(value, comparisonValue))
+                    {
+                        SetValue(recordPointer, newValue);
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+        public TValue AddOrUpdate(TKey key, TValue addValue, Func<TKey, TValue, TValue> updateValueFactory)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    RobinHoodAdd(ref context, addValue);
+                    return addValue;
+                }
+                else
+                {
+                    TValue value = GetValue(GetValuePointer(recordPointer));
+                    TValue newValue = updateValueFactory(key, value);
+                    SetValue(recordPointer, newValue);
+                    return newValue;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+        public TValue AddOrUpdate(TKey key, Func<TKey, TValue> addValueFactory, Func<TKey, TValue, TValue> updateValueFactory)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks);
+            try
+            {
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    var value = addValueFactory(key);
+                    RobinHoodAdd(ref context, value);
+                    return value;
+                }
+                else
+                {
+                    var value = GetValue(GetValuePointer(recordPointer));
+                    var newValue = updateValueFactory(key, value);
+                    SetValue(recordPointer, newValue);
+                    return newValue;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+
         }
 
         //[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -602,27 +808,9 @@ namespace PersistentHashing
         private unsafe struct NonBlockingOperationContext
         {
             public long InitialSlot;
-            public long RemainingSlotsInChunk;
-            public long CurrentSlot;
             public int* Versions;
             public int VersionIndex;
             public TKey Key;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool GetIsWriterInProgressAndReadVersion(ref NonBlockingOperationContext context)
-        {
-            //if (context.Versions == null) return false;
-            if (context.RemainingSlotsInChunk == 0)
-            {
-                var syncObject = syncObjects[context.CurrentSlot >> chunkBits];
-                context.Versions[context.VersionIndex] = syncObject.Version;
-                context.RemainingSlotsInChunk = chunkSize - (context.CurrentSlot & chunkMask) - 1;
-                context.VersionIndex++;
-                return syncObject.IsWriterInProgress;
-            }
-            context.RemainingSlotsInChunk--;
-            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -630,37 +818,42 @@ namespace PersistentHashing
         {
             var spinWait = new SpinWait();
         start:
-            context.CurrentSlot = context.InitialSlot;
-            context.RemainingSlotsInChunk = 0;
+            var currentSlot = context.InitialSlot;
+            var chunkIndex = (int)(currentSlot >> chunkBits);
+            var syncObject = syncObjects[chunkIndex];
+            if (syncObject.IsWriterInProgress)
+            {
+                spinWait.SpinOnce();
+                goto start;
+            }
+            var remainingSlotsInChunk = chunkSize - (context.InitialSlot & chunkMask);
             context.VersionIndex = 0;
             byte* recordPointer = GetRecordPointer(context.InitialSlot);
             int distance = 1;
-        loop:
+            context.Versions[0] = syncObject.Version;
+        
+            while (true)
             {
-                if (GetIsWriterInProgressAndReadVersion(ref context))
-                {
-                    spinWait.SpinOnce();
-                    goto start;
-                }
-
                 if (GetDistance(recordPointer) == 0) return null;
-                if (comparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer))))
-                {
-                    return recordPointer;
-                }
+                if (comparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer)))) return recordPointer;
                 recordPointer += recordSize;
-                context.CurrentSlot++;
-                if (recordPointer >= endTablePointer)
-                {
-                    recordPointer = tablePointer;
-                    context.CurrentSlot = 0;
-                }
-                if (distance > maxAllowedDistance)
-                {
-                    ReachedMaxAllowedDistance();
-                }
+                if (recordPointer >= endTablePointer) recordPointer = tablePointer;
+                if (distance > maxAllowedDistance) ReachedMaxAllowedDistance();
                 distance++;
-                goto loop;
+                if (--remainingSlotsInChunk == 0)
+                {
+                    context.VersionIndex++;
+                    chunkIndex++;
+                    if (chunkIndex >= syncObjects.Length) chunkIndex = 0;
+                    syncObject = syncObjects[chunkIndex];
+                    if (syncObject.IsWriterInProgress)
+                    {
+                        spinWait.SpinOnce();
+                        goto start;
+                    }
+                    remainingSlotsInChunk = chunkSize;
+                    context.Versions[context.VersionIndex] = syncObject.Version;
+                }
             }
         }
 
