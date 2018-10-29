@@ -66,14 +66,17 @@ namespace PersistentHashing
             uint* offsetPointer = (uint*)&offset;
             var lastArea = mapping.areas[mapping.areas.Count - 1];
             byte* desiredAddress = lastArea.Address + lastArea.Size;
+            ulong bytesToMap = (ulong)bytesToGrow;
             var address = Win32FileMapping.MapViewOfFileEx(mmf.SafeMemoryMappedFileHandle.DangerousGetHandle(),
                 Win32FileMapping.FileMapAccess.Read | Win32FileMapping.FileMapAccess.Write,
-                offsetPointer[1], offsetPointer[0], new UIntPtr((ulong)bytesToGrow), desiredAddress);
+                offsetPointer[1], offsetPointer[0], new UIntPtr(bytesToMap), desiredAddress);
+            
             if (address == null)
             {
+                bytesToMap = (ulong)mapping.fileStream.Length;
                 address = Win32FileMapping.MapViewOfFileEx(mmf.SafeMemoryMappedFileHandle.DangerousGetHandle(),
                    Win32FileMapping.FileMapAccess.Read | Win32FileMapping.FileMapAccess.Write,
-                   offsetPointer[1], offsetPointer[0], new UIntPtr((ulong)bytesToGrow), null);
+                   offsetPointer[1], offsetPointer[0], new UIntPtr(bytesToMap), null);
                 if (address == null) throw new Win32Exception();
                 mapping = new MemoryMapping()
                 {
@@ -87,7 +90,7 @@ namespace PersistentHashing
             {
                 Address = address,
                 Mmf = mmf,
-                Size = bytesToGrow
+                Size = (long) bytesToMap
             };
             mapping.areas.Add(area);
             return mapping;

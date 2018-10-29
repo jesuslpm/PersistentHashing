@@ -359,6 +359,12 @@ namespace PersistentHashing
             }
         }
 
+        public bool TryGetValue(TKey key, out ReadOnlySpan<byte> span)
+        {
+            span = new Span<byte>(new byte[10]);
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsNonBlockingOperationValid(ref NonBlockingOperationContext context)
         {
