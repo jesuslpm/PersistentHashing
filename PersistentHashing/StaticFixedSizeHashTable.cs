@@ -497,11 +497,11 @@ namespace PersistentHashing
                         * http://codecapsule.com/2013/11/17/robin-hood-hashing-backward-shift-deletion/
                         */
 
-                    currentRecordPointer += recordSize;
+                    currentRecordPointer += config.RecordSize;
                     context.CurrentSlot++;
-                    if (currentRecordPointer >= endTablePointer) // start from begining when reaching the end
+                    if (currentRecordPointer >= config.EndTablePointer) // start from begining when reaching the end
                     {
-                        currentRecordPointer = tablePointer;
+                        currentRecordPointer = config.TablePointer;
                         context.CurrentSlot = 0;
                     }
                     LockIfNeeded(ref context);
@@ -510,7 +510,7 @@ namespace PersistentHashing
                     {
                         SetDistance(emptyRecordPointer, 0);
                         value = GetValue(GetValuePointer(currentRecordPointer));
-                        Interlocked.Decrement(ref headerPointer->RecordCount);
+                        Interlocked.Decrement(ref config.HeaderPointer->RecordCount);
                         return true;
                     }
                     SetKey(emptyRecordPointer, GetKey(currentRecordPointer));
@@ -793,35 +793,19 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool GetIsWriterInProgressAndReadVersion(ref NonBlockingOperationContext context)
-        {
-            //if (context.Versions == null) return false;
-            if (context.RemainingSlotsInChunk == 0)
-            {
-                var syncObject = syncObjects[context.CurrentSlot >> chunkBits];
-                context.Versions[context.VersionIndex] = syncObject.Version;
-                context.RemainingSlotsInChunk = chunkSize - (context.CurrentSlot & chunkMask) - 1;
-                context.VersionIndex++;
-                return syncObject.IsWriterInProgress;
-            }
-            context.RemainingSlotsInChunk--;
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte* FindRecordNonBlocking(ref NonBlockingOperationContext context)
         {
             var spinWait = new SpinWait();
         start:
             var currentSlot = context.InitialSlot;
-            var chunkIndex = (int)(currentSlot >> chunkBits);
-            var syncObject = syncObjects[chunkIndex];
+            var chunkIndex = (int)(currentSlot >> config.ChunkBits);
+            var syncObject = config.SyncObjects[chunkIndex];
             if (syncObject.IsWriterInProgress)
             {
                 spinWait.SpinOnce();
                 goto start;
             }
-            var remainingSlotsInChunk = chunkSize - (context.InitialSlot & chunkMask);
+            var remainingSlotsInChunk = config.ChunkSize - (context.InitialSlot & config.ChunkMask);
             context.VersionIndex = 0;
             byte* recordPointer = GetRecordPointer(context.InitialSlot);
             int distance = 1;
@@ -831,22 +815,22 @@ namespace PersistentHashing
             {
                 if (GetDistance(recordPointer) == 0) return null;
                 if (comparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer)))) return recordPointer;
-                recordPointer += recordSize;
-                if (recordPointer >= endTablePointer) recordPointer = tablePointer;
-                if (distance > maxAllowedDistance) ReachedMaxAllowedDistance();
+                recordPointer += config.RecordSize;
+                if (recordPointer >= config.EndTablePointer) recordPointer = config.TablePointer;
+                if (distance > config.MaxAllowedDistance) ReachedMaxAllowedDistance();
                 distance++;
                 if (--remainingSlotsInChunk == 0)
                 {
                     context.VersionIndex++;
                     chunkIndex++;
-                    if (chunkIndex >= syncObjects.Length) chunkIndex = 0;
-                    syncObject = syncObjects[chunkIndex];
+                    if (chunkIndex >= config.SyncObjects.Length) chunkIndex = 0;
+                    syncObject = config.SyncObjects[chunkIndex];
                     if (syncObject.IsWriterInProgress)
                     {
                         spinWait.SpinOnce();
                         goto start;
                     }
-                    remainingSlotsInChunk = chunkSize;
+                    remainingSlotsInChunk = config.ChunkSize;
                     context.Versions[context.VersionIndex] = syncObject.Version;
                 }
             }
