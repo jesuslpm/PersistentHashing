@@ -12,7 +12,7 @@ namespace Benchmarks
 {
     static class Bench
     {
-        const int n = 40_000_000;
+        const int n = 10_000_000;
 
         private static readonly int ThreadCount = Environment.ProcessorCount;
 
