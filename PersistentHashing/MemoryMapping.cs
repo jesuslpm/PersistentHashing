@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 
@@ -25,7 +26,7 @@ namespace PersistentHashing
             public long Size;
         }
 
-        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal byte* GetBaseAddress()
         {
             return baseAddress;

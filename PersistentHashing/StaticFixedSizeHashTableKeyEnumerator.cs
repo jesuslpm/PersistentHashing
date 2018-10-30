@@ -13,14 +13,14 @@ namespace PersistentHashing
         public StaticFixedSizeHashTableKeyEnumerator(StaticFixedSizeHashTable<TKey, TValue> hashTable )
         {
             this.hashTable = hashTable;
-            recordPointer = hashTable.tablePointer;
+            recordPointer = hashTable.config.TablePointer;
         }
 
         public TKey Current
         {
             get
             {
-                if (recordPointer >= hashTable.tablePointer)
+                if (recordPointer >= hashTable.config.EndTablePointer)
                 {
                     throw new InvalidOperationException("No more records");
                 }
@@ -36,9 +36,9 @@ namespace PersistentHashing
 
         public bool MoveNext()
         {
-            while (recordPointer < hashTable.endTablePointer)
+            while (recordPointer < hashTable.config.EndTablePointer)
             {
-                recordPointer += hashTable.recordSize;
+                recordPointer += hashTable.config.RecordSize;
                 if (hashTable.GetDistance(recordPointer) > 0) return true;
             }
             return false;
@@ -46,7 +46,7 @@ namespace PersistentHashing
 
         public void Reset()
         {
-            recordPointer = hashTable.tablePointer;
+            recordPointer = hashTable.config.TablePointer;
         }
     }
 }

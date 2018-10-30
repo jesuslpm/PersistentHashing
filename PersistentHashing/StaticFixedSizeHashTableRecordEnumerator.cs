@@ -17,7 +17,7 @@ namespace PersistentHashing
         public StaticFixedSizeHashTableRecordEnumerator(StaticFixedSizeHashTable<TKey, TValue> hashTable )
         {
             this.hashTable = hashTable;
-            recordPointer = hashTable.tablePointer - hashTable.recordSize;
+            recordPointer = hashTable.config.TablePointer - hashTable.config.RecordSize;
             slot = -1;
         }
 
@@ -25,7 +25,7 @@ namespace PersistentHashing
         {
             get
             {
-                if (slot < 0 || slot >= hashTable.slotCount)
+                if (slot < 0 || slot >= hashTable.config.SlotCount)
                 {
                     throw new InvalidOperationException("No current record");
                 }
@@ -41,9 +41,9 @@ namespace PersistentHashing
 
         public bool MoveNext()
         {
-            while (recordPointer < hashTable.endTablePointer)
+            while (recordPointer < hashTable.config.EndTablePointer)
             {
-                recordPointer += hashTable.recordSize;
+                recordPointer += hashTable.config.RecordSize;
                 slot++;
                 if (hashTable.ThreadSafety == ThreadSafety.Safe)
                 {
@@ -51,7 +51,7 @@ namespace PersistentHashing
 #if SPINLATCH
                     SpinLatch.Enter(ref hashTable.syncObjects[slot >> hashTable.chunkBits], ref lockTaken);
 #else
-                    Monitor.Enter(hashTable.syncObjects[slot >> hashTable.chunkBits], ref lockTaken);
+                    Monitor.Enter(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits], ref lockTaken);
 #endif
                     try
                     {
@@ -68,7 +68,7 @@ namespace PersistentHashing
 #if SPINLATCH
                         SpinLatch.Exit(ref hashTable.syncObjects[slot >> hashTable.chunkBits]);
 #else
-                        Monitor.Exit(hashTable.syncObjects[slot >> hashTable.chunkBits]);
+                        Monitor.Exit(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits]);
 #endif
                     }
                 }
@@ -85,7 +85,7 @@ namespace PersistentHashing
 
         public void Reset()
         {
-            recordPointer = hashTable.tablePointer - hashTable.recordSize;
+            recordPointer = hashTable.config.TablePointer - hashTable.config.RecordSize;
             slot = -1;
         }
     }
