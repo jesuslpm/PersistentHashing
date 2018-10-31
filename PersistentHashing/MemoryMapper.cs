@@ -53,7 +53,7 @@ namespace PersistentHashing
         {
             if (isDisposed) return;
             isDisposed = true;
-            this.FlushInternal();
+            //this.FlushInternal();
             mapping.Release();
             fs.Dispose();
         }

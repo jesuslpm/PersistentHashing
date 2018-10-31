@@ -12,7 +12,7 @@ namespace Benchmarks
 {
     static class Bench
     {
-        const int n = 10_000_000;
+        const int n = 100_000_000;
 
         private static readonly int ThreadCount = Environment.ProcessorCount;
 
@@ -22,7 +22,7 @@ namespace Benchmarks
             {
                 //BenchmarkDictionarySequential, BenchmarkDictionaryRandom,
                 //BenchmarkStaticFixedSizeHashTableSequential, BenchmarkStaticFixedSizeHashTableRandom,
-                BenchmarkStaticFixedSizeHashTableMultiThreaded,
+                //BenchmarkStaticFixedSizeHashTableMultiThreaded,
                 BenchmarkConcurrentDictionaryMultiThreaded,
                 //BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
                 //BenchmarkManualResetEvent,
@@ -195,6 +195,7 @@ namespace Benchmarks
             if (File.Exists(filePath)) File.Delete(filePath);
             yield return $"StaticFixedSizeHashTable {ThreadCount} threads";
             var watch = Stopwatch.StartNew();
+            var p = Process.GetCurrentProcess();
             using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Safe, key => key, null, false))
             {
                 //hashTable.WarmUp();
@@ -227,8 +228,13 @@ namespace Benchmarks
                 Task.WaitAll(tasks);
                 watch.Stop();
                 yield return $"{n:0,0} HashTable.TryGetValueNonBlocking calls in {watch.Elapsed}";
+                yield return $"Peak Working Set {p.PeakWorkingSet64:0,0}; Private Memory {p.PrivateMemorySize64:0,0}; GC Total Memory ${GC.GetTotalMemory(false):0,0}";
+                hashTable.Flush();
             }
-           
+            if (File.Exists(filePath)) File.Delete(filePath);
+            //Thread.Sleep(2000);
+            p = Process.GetCurrentProcess();
+            yield return $"Memory after disposing hash table: Working Set: {p.WorkingSet64:0,0}";
         }
 
         private static Task HashTableTryAdd(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)

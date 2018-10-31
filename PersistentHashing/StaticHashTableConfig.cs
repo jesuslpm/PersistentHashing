@@ -17,7 +17,11 @@ namespace PersistentHashing
         public SyncObject[] SyncObjects;
         public Func<TKey, long> HashFunction;
         public IEqualityComparer<TKey> KeyComparer;
-        public IEqualityComparer<TKey> ValueComparer;
+        public IEqualityComparer<TValue> ValueComparer;
+        public MemoryMapper TableMemoryMapper;
+        public MemoryMappingSession TableMappingSession;
+        public byte* TableFileBaseAddress;
+        public ThreadSafety ThreadSafety;
 
         public StaticFixedSizeHashTableFileHeader* HeaderPointer;
         public byte* TablePointer;

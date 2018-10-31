@@ -45,7 +45,7 @@ namespace PersistentHashing
             {
                 recordPointer += hashTable.config.RecordSize;
                 slot++;
-                if (hashTable.ThreadSafety == ThreadSafety.Safe)
+                if (hashTable.config.ThreadSafety == ThreadSafety.Safe)
                 {
                     bool lockTaken = false;
 #if SPINLATCH

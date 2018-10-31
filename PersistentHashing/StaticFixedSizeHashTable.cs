@@ -14,11 +14,6 @@ namespace PersistentHashing
         // <key><value-padding><value><distance padding><distance16><record-padding>
 
         internal StaticHashTableConfig<TKey, TValue> config;
-        readonly bool isAligned;
-        private MemoryMapper memoryMapper;
-        private MemoryMappingSession mappingSession;
-        private byte* fileBaseAddress;
-        public readonly ThreadSafety ThreadSafety;
         private int syncObjectCount;
 
         /// <summary>
@@ -32,10 +27,6 @@ namespace PersistentHashing
         public float LoadFactor => (float)Count / (float)config.SlotCount;
         public float MeanDistance => (float)config.HeaderPointer->DistanceSum / (float)Count;
 
-        private readonly IEqualityComparer<TKey> comparer;
-        private readonly IEqualityComparer<TValue> valueComparer;
-        private readonly long Capacity;
-
 
         public long Count
         {
@@ -45,29 +36,29 @@ namespace PersistentHashing
 
 
 
-        public StaticFixedSizeHashTable(string filePath, long capacity, ThreadSafety threadSafety, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> comparer = null,  bool isAligned = false)
+        public StaticFixedSizeHashTable(string filePath, long capacity, ThreadSafety threadSafety, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> keyComparer = null,  bool isAligned = false)
         {
-            this.isAligned = isAligned;
+            config.IsAligned = isAligned;
             config.KeyOffset = 0;
             this.config.HashFunction = hashFunction;
-            this.comparer = comparer ?? EqualityComparer<TKey>.Default;
-            this.valueComparer = EqualityComparer<TValue>.Default;
+            this.config.KeyComparer = config.KeyComparer ?? EqualityComparer<TKey>.Default;
+            this.config.ValueComparer = EqualityComparer<TValue>.Default;
             CalculateOffsetsAndSizesDependingOnAlignement();
             config.SlotCount = Math.Max(capacity + capacity/8 + capacity/16, 4);
             config.SlotCount = Bits.IsPowerOfTwo(config.SlotCount) ? config.SlotCount : Bits.NextPowerOf2(config.SlotCount);
-            this.Capacity = config.SlotCount - config.SlotCount/8 - capacity/16; // conservative max load factor = 81.25%
+            this.config.Capacity = config.SlotCount - config.SlotCount/8 - capacity/16; // conservative max load factor = 81.25%
             config.HashMask = config.SlotCount - 1L;
-            this.ThreadSafety = threadSafety;
+            this.config.ThreadSafety = threadSafety;
             var fileSize = (long) sizeof(StaticFixedSizeHashTableFileHeader) +  config.SlotCount * config.RecordSize;
             fileSize += (Constants.AllocationGranularity - (fileSize & (Constants.AllocationGranularity - 1))) & (Constants.AllocationGranularity - 1);
 
             var isNew = !File.Exists(filePath);
 
-            memoryMapper = new MemoryMapper(filePath, (long) fileSize);
-            mappingSession = memoryMapper.OpenSession();
+            config.TableMemoryMapper = new MemoryMapper(filePath, (long) fileSize);
+            config.TableMappingSession = config.TableMemoryMapper.OpenSession();
 
-            fileBaseAddress = mappingSession.GetBaseAddress();
-            config.HeaderPointer = (StaticFixedSizeHashTableFileHeader*)fileBaseAddress;
+            config.TableFileBaseAddress = config.TableMappingSession.GetBaseAddress();
+            config.HeaderPointer = (StaticFixedSizeHashTableFileHeader*)config.TableFileBaseAddress;
 
 
             if (isNew)
@@ -79,7 +70,7 @@ namespace PersistentHashing
                 ValidateHeader();
                 config.SlotCount = config.HeaderPointer->SlotCount;
             }
-            config.TablePointer = fileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
+            config.TablePointer = config.TableFileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
             config.EndTablePointer = config.TablePointer + config.RecordSize * config.SlotCount;
             config.MaxAllowedDistance = (short) Math.Max(config.SlotCount, 448);
 
@@ -96,7 +87,7 @@ namespace PersistentHashing
              * If the record distance is greater than chunk size, more than one sync object will be locked.
              */
 
-            if (this.ThreadSafety == ThreadSafety.Unsafe) return;
+            if (this.config.ThreadSafety == ThreadSafety.Unsafe) return;
             /*
              According to the Birthday problem and using the Square approximation
              p(n) = n^2/2/m. where p is the probalitity, n is the number of people and m is the number of days in a year.
@@ -152,8 +143,8 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        byte* GetRecordPointer(long slotIndex) => 
-            config.TablePointer + config.RecordSize * slotIndex;
+        byte* GetRecordPointer(long slot) => 
+            config.TablePointer + config.RecordSize * slot;
 
         /// <summary>
         /// Returns the distance + 1 to the initial slot index.
@@ -211,7 +202,7 @@ namespace PersistentHashing
 
         void InitializeHeader()
         {
-            config.HeaderPointer->IsAligned = isAligned;
+            config.HeaderPointer->IsAligned = config.IsAligned;
             config.HeaderPointer->DistanceSum = 0;
             config.HeaderPointer->KeySize = config.KeySize;
             config.HeaderPointer->Magic = StaticFixedSizeHashTableFileHeader.MagicNumber;
@@ -229,7 +220,7 @@ namespace PersistentHashing
             {
                 throw new FormatException($"This is not a {nameof(StaticFixedSizeHashTable<TKey, TValue>)} file");
             }
-            if (config.HeaderPointer->IsAligned != isAligned)
+            if (config.HeaderPointer->IsAligned != config.IsAligned)
             {
                 throw new ArgumentException("Mismatched alignement");
             }
@@ -267,7 +258,7 @@ namespace PersistentHashing
 
         private int GetPadding(int offsetWithoutPadding, int alignement)
         {
-            if (!isAligned) return 0;
+            if (!config.IsAligned) return 0;
             int alignementMinusOne = alignement - 1;
             // (alignement - offsetWithoutPadding % alignement) % alignement
             return (alignement - (offsetWithoutPadding & alignementMinusOne)) & alignementMinusOne;
@@ -275,7 +266,7 @@ namespace PersistentHashing
 
         private int GetAlignement(int size)
         {
-            if (!isAligned) return 1;
+            if (!config.IsAligned) return 1;
             if (size >= 8) return 8;
             if (size >= 4) return 4;
             if (size >= 2) return 2;
@@ -486,7 +477,7 @@ namespace PersistentHashing
                     return false;
                 }
 #if DEBUG
-                Interlocked.Add(ref headerPointer->DistanceSum, 1 - GetDistance(emptyRecordPointer));
+                Interlocked.Add(ref config.HeaderPointer->DistanceSum, 1 - GetDistance(emptyRecordPointer));
 #endif
                 byte* currentRecordPointer = emptyRecordPointer;
                 while (true)
@@ -517,7 +508,7 @@ namespace PersistentHashing
                     SetValue(emptyRecordPointer, GetValue(currentRecordPointer));
                     SetDistance(emptyRecordPointer, (short)(distance - 1));
 #if DEBUG
-                    Interlocked.Decrement(ref headerPointer->DistanceSum);
+                    Interlocked.Decrement(ref config.HeaderPointer->DistanceSum);
 #endif
                     emptyRecordPointer = currentRecordPointer;
                 }
@@ -582,7 +573,7 @@ namespace PersistentHashing
                 else
                 {
                     var value = GetValue(GetValuePointer(recordPointer));
-                    if (valueComparer.Equals(value, comparisonValue))
+                    if (config.ValueComparer.Equals(value, comparisonValue))
                     {
                         SetValue(recordPointer, newValue);
                         return true;
@@ -792,7 +783,7 @@ namespace PersistentHashing
             public TKey Key;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte* FindRecordNonBlocking(ref NonBlockingOperationContext context)
         {
             var spinWait = new SpinWait();
@@ -814,7 +805,7 @@ namespace PersistentHashing
             while (true)
             {
                 if (GetDistance(recordPointer) == 0) return null;
-                if (comparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer)))) return recordPointer;
+                if (config.KeyComparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer)))) return recordPointer;
                 recordPointer += config.RecordSize;
                 if (recordPointer >= config.EndTablePointer) recordPointer = config.TablePointer;
                 if (distance > config.MaxAllowedDistance) ReachedMaxAllowedDistance();
@@ -858,7 +849,7 @@ namespace PersistentHashing
                 LockIfNeeded(ref context);
 
                 if (GetDistance(recordPointer) == 0) return null;
-                if (comparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer))))
+                if (config.KeyComparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer))))
                 {
                     return recordPointer;
                 }
@@ -951,7 +942,7 @@ namespace PersistentHashing
 
         public void WarmUp()
         {
-            mappingSession.WarmUp();
+            config.TableMappingSession.WarmUp();
         }
 
 
@@ -985,13 +976,13 @@ namespace PersistentHashing
         {
             if (IsDisposed) return;
             IsDisposed = true;
-            if (this.mappingSession != null) this.mappingSession.Dispose();
-            if (this.memoryMapper != null) this.memoryMapper.Dispose();
+            if (this.config.TableMappingSession != null) this.config.TableMappingSession.Dispose();
+            if (this.config.TableMemoryMapper != null) this.config.TableMemoryMapper.Dispose();
         }
 
         public void Flush()
         {
-            this.memoryMapper.Flush();
+            this.config.TableMemoryMapper.Flush();
         }
 
         public void Add(KeyValuePair<TKey, TValue> item)
@@ -1012,7 +1003,7 @@ namespace PersistentHashing
         {
             if (TryGetValue(item.Key, out TValue value))
             {
-                return valueComparer.Equals(item.Value, value);
+                return config.ValueComparer.Equals(item.Value, value);
             }
             return false;
         }
