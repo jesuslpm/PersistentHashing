@@ -82,9 +82,11 @@ namespace PersistentHashing
             /*
              * We use System.Threading.Monitor To achieve synchronization
              * The table is divided into equal sized chunks of slots.
+             * The numer of chunks is a power of two that ranges from 8 to 8192
              * We use an array of sync objects with one sync object per chunk.
              * The sync object associated with a chunk is locked when accesing slots in the chunk.
              * If the record distance is greater than chunk size, more than one sync object will be locked.
+             * But we never lock more than 8 sync objects in a single operation.
              */
 
            
@@ -105,7 +107,8 @@ namespace PersistentHashing
             if (Bits.IsPowerOfTwo(syncObjectCount) == false) syncObjectCount = Math.Min(Bits.NextPowerOf2(syncObjectCount), 8192);
 
 
-            // max locks per operation cannot be greater than 8 because we use one long as an array of 8 bools to keep track of locked sync objects
+            // We impose the following constraint: max locks per operation cannot be greater than 8
+            // We use one long as an array of 8 bools to keep track of locked sync objects
             // we want at least 64 slots per chunk when SlotCount >= 512, for smaller tables SlotCount/8
             // with 8 locks and 64 slots per chunk, we can cover 8*64 = 512 slots and (8 - 1)* 64 = 448 MaxAllowedDistance  
             // Most of the time, when distance < 64, we only need to lock one sync object
