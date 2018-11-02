@@ -45,40 +45,31 @@ namespace PersistentHashing
             {
                 recordPointer += hashTable.config.RecordSize;
                 slot++;
-                if (hashTable.config.ThreadSafety == ThreadSafety.Safe)
+                bool lockTaken = false;
+#if SPINLATCH
+                SpinLatch.Enter(ref hashTable.syncObjects[slot >> hashTable.chunkBits], ref lockTaken);
+#else
+                Monitor.Enter(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits], ref lockTaken);
+#endif
+                try
                 {
-                    bool lockTaken = false;
-#if SPINLATCH
-                    SpinLatch.Enter(ref hashTable.syncObjects[slot >> hashTable.chunkBits], ref lockTaken);
-#else
-                    Monitor.Enter(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits], ref lockTaken);
-#endif
-                    try
+                    if (hashTable.GetDistance(recordPointer) > 0)
                     {
-                        if (hashTable.GetDistance(recordPointer) > 0)
-                        {
-                            _current = new KeyValuePair<TKey, TValue>(
-                                StaticFixedSizeHashTable<TKey, TValue>.GetKey(hashTable.GetKeyPointer(recordPointer)),
-                                StaticFixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer)));
-                            return true;
-                        }
-                    }
-                    finally
-                    {
-#if SPINLATCH
-                        SpinLatch.Exit(ref hashTable.syncObjects[slot >> hashTable.chunkBits]);
-#else
-                        Monitor.Exit(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits]);
-#endif
+                        _current = new KeyValuePair<TKey, TValue>(
+                            StaticFixedSizeHashTable<TKey, TValue>.GetKey(hashTable.GetKeyPointer(recordPointer)),
+                            StaticFixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer)));
+                        return true;
                     }
                 }
-                else if (hashTable.GetDistance(recordPointer) > 0)
-                { 
-                    _current = new KeyValuePair<TKey, TValue>(
-                        StaticFixedSizeHashTable<TKey, TValue>.GetKey(hashTable.GetKeyPointer(recordPointer)),
-                        StaticFixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer)));
-                    return true;
+                finally
+                {
+#if SPINLATCH
+                    SpinLatch.Exit(ref hashTable.syncObjects[slot >> hashTable.chunkBits]);
+#else
+                    Monitor.Exit(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits]);
+#endif
                 }
+
             }
             return false;
         }

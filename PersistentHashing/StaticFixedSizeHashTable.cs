@@ -36,7 +36,7 @@ namespace PersistentHashing
 
 
 
-        public StaticFixedSizeHashTable(string filePath, long capacity, ThreadSafety threadSafety, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> keyComparer = null,  bool isAligned = false)
+        public StaticFixedSizeHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> keyComparer = null,  bool isAligned = false)
         {
             config.IsAligned = isAligned;
             config.KeyOffset = 0;
@@ -44,11 +44,11 @@ namespace PersistentHashing
             this.config.KeyComparer = config.KeyComparer ?? EqualityComparer<TKey>.Default;
             this.config.ValueComparer = EqualityComparer<TValue>.Default;
             CalculateOffsetsAndSizesDependingOnAlignement();
-            config.SlotCount = Math.Max(capacity + capacity/8 + capacity/16, 4);
+            config.SlotCount = Math.Max(capacity + capacity/8 + capacity/16, 32);
             config.SlotCount = Bits.IsPowerOfTwo(config.SlotCount) ? config.SlotCount : Bits.NextPowerOf2(config.SlotCount);
             this.config.Capacity = config.SlotCount - config.SlotCount/8 - capacity/16; // conservative max load factor = 81.25%
             config.HashMask = config.SlotCount - 1L;
-            this.config.ThreadSafety = threadSafety;
+
             var fileSize = (long) sizeof(StaticFixedSizeHashTableFileHeader) +  config.SlotCount * config.RecordSize;
             fileSize += (Constants.AllocationGranularity - (fileSize & (Constants.AllocationGranularity - 1))) & (Constants.AllocationGranularity - 1);
 
@@ -72,7 +72,7 @@ namespace PersistentHashing
             }
             config.TablePointer = config.TableFileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
             config.EndTablePointer = config.TablePointer + config.RecordSize * config.SlotCount;
-            config.MaxAllowedDistance = (short) Math.Max(config.SlotCount, 448);
+            config.SlotBits = Bits.MostSignificantBit(config.SlotCount);
 
             InitializeSynchronization();
         }
@@ -87,52 +87,66 @@ namespace PersistentHashing
              * If the record distance is greater than chunk size, more than one sync object will be locked.
              */
 
-            if (this.config.ThreadSafety == ThreadSafety.Unsafe) return;
+           
             /*
              According to the Birthday problem and using the Square approximation
-             p(n) = n^2/2/m. where p is the probalitity, n is the number of people and m is the number of days in a year.
+             p(n) = n^2/2/m. where p is the probalitity that at least two people have the same birthday, 
+             n is the number of people and m is the number of days in a year.
              m = n^2/2/p(n)
              syncObjectCount maps to the number of days in a year (m), 
              numer of threads accessing hash table maps to number of people (n).
              we are guessing number of threads = Environment.ProcessorCount * 2  
              and we want a probability of 1/8 that a thread gets blocked.
-
-             we are constraining syncObjectCount to be between 128 and 8192
+            
             */
-            syncObjectCount = Math.Min(Math.Max( Environment.ProcessorCount * Environment.ProcessorCount * 16, 128), 8192);
+            syncObjectCount = Math.Min(Environment.ProcessorCount * Environment.ProcessorCount * 16, 8192);
 
             // but we need a power of two
             if (Bits.IsPowerOfTwo(syncObjectCount) == false) syncObjectCount = Math.Min(Bits.NextPowerOf2(syncObjectCount), 8192);
 
 
-            // max locks per operation cannot be greater than 8, 
-            // we are using one long as an array of 8 bools to keep track of locked sync objects
-            // we want at least 64 slots per chunk. 
-            // with 8 locks and 64 slots per chunk, we can cover 8*64 = 512 slots and (8 - 1)* 64 = 448 config.MaxAllowedDistance  
+            // max locks per operation cannot be greater than 8 because we use one long as an array of 8 bools to keep track of locked sync objects
+            // we want at least 64 slots per chunk when SlotCount >= 512, for smaller tables SlotCount/8
+            // with 8 locks and 64 slots per chunk, we can cover 8*64 = 512 slots and (8 - 1)* 64 = 448 MaxAllowedDistance  
             // Most of the time, when distance < 64, we only need to lock one sync object
-            // Chunk size cannot be greater than the number of slots
-            config.ChunkSize = Math.Min(Math.Max(config.SlotCount / syncObjectCount, 64), config.SlotCount);
+            int minChunkSize = (int) Math.Min(config.SlotCount / 8, 64);
+            config.ChunkSize = Math.Max(config.SlotCount / syncObjectCount, minChunkSize);
             config.ChunkMask = config.ChunkSize - 1;
             config.ChunkBits = Bits.MostSignificantBit(config.ChunkSize);
-
-            // As said, max locks per operation cannot be greater than 8. 
-            // We must satisfy (MaxLocksPerOperation - 1) * ChunkSize >= MaxAllowedDistance,
-            // We don't want to allow a a distance greater than 448. 
-            // config.ChunkSize == 1 is an edge case.
-            config.MaxAllowedDistance = config.ChunkSize == 1 ? (short)8: (short) Math.Min(7 * config.ChunkSize, 448);
-
-            // We use an array of max locks per operation booleans to keep track of locked sync objects
-            config.MaxLocksPerOperation = config.ChunkSize == 1 ?  8 : Math.Max((int)(config.MaxAllowedDistance / config.ChunkSize + 1L), 2);
 
             // recalc with constraints applied 
             syncObjectCount = (int)(config.SlotCount / config.ChunkSize);
 
+            // As said, max locks per operation cannot be greater than 8. 
+            // We must satisfy (MaxLocksPerOperation - 1) * ChunkSize >= MaxAllowedDistance,
+            // Threrefore MaxAllowedDistance cannot be greater than 7 * ChunkSize 
+            // But this value can be huge, So we want to constraint MaxAllowedDistance to a smaller value.
+            // It is known that max distance grows very slowly with slot count. We guess: max distance = a + k * log2 (slotCount)
+            // for SlotCount = 512, the maximum MaxAllowedDistance without deadlocks is (syncObjectCount - 2) * ChunkSize = 6*64 = 384.
+            // Doing the math we get a=6, k=42, log2(slotCount) = config.SlotCountBits. 
+            // 42 is "The Answer to the Ultimate Question of Life, the Universe, and Everything". Is it just coincidence?
+            config.MaxAllowedDistance = (int) Math.Min(7 * config.ChunkSize, 6 + 42 * config.SlotBits);
+
+            // We nedd to adjust MaxAllowedDistance to avoid deadlocks. A deadlock will occur when a thread A start locking the first chunk,
+            // another thread B start locking the last chunk, then B tries to lock the first chunk. If A reaches the
+            // last chunk we have a dealock. Threfore MaxAllowedDistance must not span more than syncObjectCount - 2 chunks.
+            config.MaxAllowedDistance = (int) Math.Min((syncObjectCount - 2) * config.ChunkSize, config.MaxAllowedDistance);
+
+
+            // We use an array of max locks per operation booleans to keep track of locked sync objects
+            // (config.MaxAllowedDistance << config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2) this weird thing is ceil(MaxAllowedDistance FloatDiv ChunkSize) + 1
+            config.MaxLocksPerOperation = Math.Max((int)((config.MaxAllowedDistance << config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2)), 2);
+
             Debug.Assert(Bits.IsPowerOfTwo(config.ChunkSize));
-            Debug.Assert((config.MaxLocksPerOperation > 1 || config.ChunkSize == 1 && config.MaxLocksPerOperation == 1) && config.MaxLocksPerOperation <= 8);
-            Debug.Assert(((config.MaxLocksPerOperation - 1) * config.ChunkSize >= config.MaxAllowedDistance) || config.ChunkSize == 1);
+            Debug.Assert(config.MaxLocksPerOperation > 1 && config.MaxLocksPerOperation <= 8);
+
+            // MaxAllowedDistance is covered with MaxLocksPerOperation locks
+            Debug.Assert((config.MaxLocksPerOperation - 1) * config.ChunkSize >= config.MaxAllowedDistance);
+
+            // MaxAllowedDistance is reached before deadlocking.
+            Debug.Assert(config.MaxAllowedDistance <= (syncObjectCount - 2) * config.ChunkSize);
 
 
-           
 #if SPINLATCH
             config.SyncObjects = new int[syncObjectCount];
             for (int i = 0; i < syncObjectCount; i++) config.SyncObjects[i] = 0;
@@ -294,18 +308,19 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void InitializeOperationContext(ref OperationContext context, TKey key, void* takenLocks)
+        void InitializeOperationContext(ref OperationContext context, TKey key, void* takenLocks, bool isReadOnly)
         {
             context.CurrentSlot = context.InitialSlot = GetInitialSlot(key);
             context.Key = key;
             context.TakenLocks = (bool*)takenLocks;
+            context.IsReadOnly = isReadOnly;
         }
 
         public bool TryGetValue(TKey key, out TValue value)
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, true);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -321,12 +336,6 @@ namespace PersistentHashing
             {
                 ReleaseLocks(ref context);
             }
-        }
-
-        public bool TryGetValue(TKey key, out ReadOnlySpan<byte> span)
-        {
-            span = new Span<byte>(new byte[10]);
-            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -379,7 +388,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -403,7 +412,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -423,7 +432,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -445,7 +454,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -467,7 +476,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 byte* emptyRecordPointer = FindRecord(ref context);
@@ -524,7 +533,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, true);
             try
             {
                 return FindRecord(ref context) != null;
@@ -539,7 +548,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -562,7 +571,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -591,7 +600,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 byte* recordPointer = FindRecord(ref context);
@@ -618,7 +627,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 var recordPointer = FindRecord(ref context);
@@ -664,8 +673,6 @@ namespace PersistentHashing
                     SetKey(recordPointer, key);
                     SetValue(recordPointer, value);
                     SetDistance(recordPointer, distance);
-
-
 #if DEBUG
                     Interlocked.Add(ref config.HeaderPointer->DistanceSum, distance - 1);
                     int maxDistance = config.HeaderPointer->MaxDistance;
@@ -694,10 +701,11 @@ namespace PersistentHashing
                     value = tempValue;
                     distance = currentRecordDistance;
                 }
-                if (distance++ > config.MaxAllowedDistance)
+                if (distance > config.MaxAllowedDistance)
                 {
                     ReachedMaxAllowedDistance();
                 }
+                distance++;
                 recordPointer += config.RecordSize;
                 context.CurrentSlot++;
                 if (recordPointer >= config.EndTablePointer) // start from begining when reaching the end
@@ -710,7 +718,7 @@ namespace PersistentHashing
 
         private void ReachedMaxAllowedDistance()
         {
-            throw new InvalidOperationException("Reached MaxAllowedDistance");
+            throw new InvalidOperationException($"Reached MaxAllowedDistance {config.MaxAllowedDistance}");
         }
 
         public void Delete(TKey key)
@@ -725,7 +733,7 @@ namespace PersistentHashing
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks);
+            InitializeOperationContext(ref context, key, &takenLocks, false);
             try
             {
                 byte* emptyRecordPointer = FindRecord(ref context);
@@ -806,10 +814,10 @@ namespace PersistentHashing
             {
                 if (GetDistance(recordPointer) == 0) return null;
                 if (config.KeyComparer.Equals(context.Key, GetKey(GetKeyPointer(recordPointer)))) return recordPointer;
-                recordPointer += config.RecordSize;
-                if (recordPointer >= config.EndTablePointer) recordPointer = config.TablePointer;
                 if (distance > config.MaxAllowedDistance) ReachedMaxAllowedDistance();
                 distance++;
+                recordPointer += config.RecordSize;
+                if (recordPointer >= config.EndTablePointer) recordPointer = config.TablePointer;
                 if (--remainingSlotsInChunk == 0)
                 {
                     context.VersionIndex++;
@@ -832,9 +840,10 @@ namespace PersistentHashing
             public long InitialSlot;
             public long RemainingSlotsInChunk;
             public long CurrentSlot;
-            public bool* TakenLocks;
-            public int LockIndex;
             public TKey Key;
+            public int LockIndex;
+            public bool* TakenLocks;
+            public bool IsReadOnly;
         }
 
         //[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -871,27 +880,6 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InitializeTakenLocks(bool* takenLocks)
-        {
-            switch (config.MaxLocksPerOperation)
-            {
-                case 0: return;
-                case 2: *(short*)takenLocks = 0; return;
-                case 3: *(short*)takenLocks = 0; takenLocks[2] = false; return;
-                case 5: *(int*)takenLocks = 0; takenLocks[4] = false; return;
-                case 9: *(long*)takenLocks = 0L; takenLocks[8] = false; return;
-            }
-            long* longPointer = (long*)takenLocks;
-            long* endLongPointer = (long*)(takenLocks + config.MaxLocksPerOperation - 1);
-            while (longPointer < endLongPointer)
-            {
-                *longPointer = 0L;
-                longPointer++;
-            }
-            *(bool*)endLongPointer = false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void LockIfNeeded(ref OperationContext context)
         {
             if (context.TakenLocks == null) return;
@@ -906,7 +894,7 @@ namespace PersistentHashing
                     var syncObject = config.SyncObjects[context.CurrentSlot >> config.ChunkBits];
                     Monitor.Enter(syncObject, 
                         ref context.TakenLocks[context.LockIndex]);
-                    syncObject.IsWriterInProgress = true;
+                    syncObject.IsWriterInProgress = !context.IsReadOnly;
 #endif
                 }
                 context.RemainingSlotsInChunk = config.ChunkSize - (context.CurrentSlot & config.ChunkMask) - 1;
@@ -930,7 +918,7 @@ namespace PersistentHashing
                 SpinLatch.Exit(ref config.SyncObjects[chunkIndex]);
 #else
                 var syncObject = config.SyncObjects[chunkIndex];
-                unchecked { syncObject.Version++; }
+                if (context.IsReadOnly == false) unchecked { syncObject.Version++; }
                 syncObject.IsWriterInProgress = false;
                 Monitor.Exit(config.SyncObjects[chunkIndex]);
 #endif

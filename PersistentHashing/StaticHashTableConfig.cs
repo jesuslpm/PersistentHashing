@@ -21,7 +21,7 @@ namespace PersistentHashing
         public MemoryMapper TableMemoryMapper;
         public MemoryMappingSession TableMappingSession;
         public byte* TableFileBaseAddress;
-        public ThreadSafety ThreadSafety;
+        //public ThreadSafety ThreadSafety;
 
         public StaticFixedSizeHashTableFileHeader* HeaderPointer;
         public byte* TablePointer;
@@ -37,6 +37,7 @@ namespace PersistentHashing
         public int RecordSize;
         public int MaxLocksPerOperation;
         public int ChunkBits;
+        public int SlotBits;
         public int MaxAllowedDistance;
 
         public bool IsAligned;

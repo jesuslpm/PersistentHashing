@@ -140,7 +140,7 @@ namespace Benchmarks
             if (File.Exists(filePath)) File.Delete(filePath);
 
             var rnd = new Random(0);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Safe, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n,  key => key, null, false))
             {
                 yield return "StaticFixedSizeHashTable thread safe single thread random access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) =>
@@ -196,7 +196,7 @@ namespace Benchmarks
             yield return $"StaticFixedSizeHashTable {ThreadCount} threads";
             var watch = Stopwatch.StartNew();
             var p = Process.GetCurrentProcess();
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Safe, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
             {
                 //hashTable.WarmUp();
                 //watch.Stop();
@@ -323,7 +323,7 @@ namespace Benchmarks
             //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, ThreadSafety.Safe, key => key, null, false))
+            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
             {
                 yield return "StaticFixedSizeHashTable thread safe single thread sequencial access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => hashTable.Add(i, i));
