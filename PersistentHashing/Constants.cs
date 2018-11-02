@@ -7,5 +7,6 @@ namespace PersistentHashing
     public static class Constants
     {
         public const int AllocationGranularity = 64 * 1024;
+        public const int AllocationGranularityMask = AllocationGranularity - 1;
     }
 }

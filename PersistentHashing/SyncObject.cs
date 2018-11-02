@@ -10,5 +10,8 @@ namespace PersistentHashing
     {
         public volatile bool IsWriterInProgress;
         public volatile int Version;
+#if SPINLATCH
+        public int Locked;
+#endif
     }
 }

@@ -20,6 +20,7 @@ namespace PersistentHashing
         public IEqualityComparer<TValue> ValueComparer;
         public MemoryMapper TableMemoryMapper;
         public MemoryMappingSession TableMappingSession;
+        public MemoryMapper DataMemoryMapper;
         public byte* TableFileBaseAddress;
         //public ThreadSafety ThreadSafety;
 
@@ -37,6 +38,7 @@ namespace PersistentHashing
         public int RecordSize;
         public int MaxLocksPerOperation;
         public int ChunkBits;
+        public int ChunkCount;
         public int SlotBits;
         public int MaxAllowedDistance;
 
