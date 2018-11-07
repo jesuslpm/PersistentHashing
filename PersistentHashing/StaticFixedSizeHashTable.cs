@@ -646,7 +646,7 @@ namespace PersistentHashing
         }
 
 
-        public TValue AddOrUpdate(TKey key, Func<TKey, TValue> addValueFactory, Func<TKey, TValue, TValue> updateValueFactory)
+        public TValue AddOrUpdate<Targ>(TKey key, Func<TKey, Targ, TValue> addValueFactory, Targ addValueFactoryArg, Func<TKey, TValue, TValue> updateValueFactory)
         {
             long takenLocks = 0L;
             var context = new OperationContext();
@@ -656,7 +656,7 @@ namespace PersistentHashing
                 byte* recordPointer = FindRecord(ref context);
                 if (recordPointer == null)
                 {
-                    TValue value = addValueFactory(key);
+                    TValue value = addValueFactory(key, addValueFactoryArg);
                     RobinHoodAdd(ref context, value);
                     return value;
                 }
@@ -675,13 +675,20 @@ namespace PersistentHashing
 
         }
 
+        public TValue AddOrUpdate(TKey key, Func<TKey, TValue> addValueFactory, Func<TKey, TValue, TValue> updateValueFactory)
+        {
+            // DRY version
+            return AddOrUpdate(key, NestedValueFactory, addValueFactory, updateValueFactory);
+        }
+
+
         public TValue AddOrUpdate(TKey key, TValue addValue, Func<TKey, TValue, TValue> updateValueFactory)
         {
-            // implementing this method with one single line of code is tempting, 
-            // but it allocates a new delegate instance each time that has to be called.
-            // return AddOrUpdate(key, _ => addValue, updateValueFactory);
+            // DRY version
+            return AddOrUpdate(key, IdentityValueFactory, addValue, updateValueFactory);
 
-            // Prefer the WET version, no allocations and no delegate calls.
+            // WET version
+            /*
             long takenLocks = 0L;
             var context = new OperationContext();
             InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
@@ -705,6 +712,7 @@ namespace PersistentHashing
             {
                 ReleaseLocks(ref context);
             }
+            */
         }
 
 

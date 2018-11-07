@@ -14,6 +14,8 @@ namespace PersistentHashing
         public long ChunkMask;
         public long ChunkSize;
 
+        public string HashTableFilePath;
+        public string DataFilePath;
         public SyncObject[] SyncObjects;
         public Func<TKey, long> HashFunction;
         public IEqualityComparer<TKey> KeyComparer;
@@ -44,5 +46,7 @@ namespace PersistentHashing
         public int MaxAllowedDistance;
 
         public bool IsAligned;
+        public bool IsThreadSafe;
+        public bool IsNew;
     }
 }
