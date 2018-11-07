@@ -66,7 +66,7 @@ namespace PersistentHashing
             {
                 // Need to lock because mapper might be calling AddMapping concurrently.
                 // but we don't want to lock if being in the finalizer.
-                if (disposing) Monitor.Enter(mapper.sessionsSyncObject, ref lockTaken);
+                if (disposing) Monitor.Enter(mapper.SyncObject, ref lockTaken);
                 if (IsDisposed) return;
                 IsDisposed = true;
                 foreach (var mapping in mappings)
@@ -79,7 +79,7 @@ namespace PersistentHashing
             }
             finally
             {
-                if (lockTaken) Monitor.Exit(mapper.sessionsSyncObject);
+                if (lockTaken) Monitor.Exit(mapper.SyncObject);
             }
             if (disposing)
             {

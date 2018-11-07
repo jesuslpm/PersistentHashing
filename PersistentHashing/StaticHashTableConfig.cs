@@ -21,6 +21,7 @@ namespace PersistentHashing
         public MemoryMapper TableMemoryMapper;
         public MemoryMappingSession TableMappingSession;
         public MemoryMapper DataMemoryMapper;
+        public DataFile DataFile;
         public byte* TableFileBaseAddress;
         //public ThreadSafety ThreadSafety;
 

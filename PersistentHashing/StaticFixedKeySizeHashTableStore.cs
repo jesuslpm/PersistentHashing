@@ -56,7 +56,8 @@ namespace PersistentHashing
 
             bool isNew = !File.Exists(filePath);
 
-            config.TableMemoryMapper = new MemoryMapper(filePath, (long) fileSize);
+            config.TableMemoryMapper = new MemoryMapper(filePath + ".HashTable", (long) fileSize);
+            config.DataFile = new DataFile(filePath + ".DataFile", 16 * 1024 * 1024, 16 * 1024 * 1024);
             config.TableMappingSession = config.TableMemoryMapper.OpenSession();
 
             config.TableFileBaseAddress = config.TableMappingSession.GetBaseAddress();
@@ -250,6 +251,11 @@ namespace PersistentHashing
         public void Flush()
         {
             this.config.TableMemoryMapper.Flush();
+        }
+
+        StaticFixedKeySizeHashTable<TKey> Open()
+        {
+            return new StaticFixedKeySizeHashTable<TKey>(ref config);
         }
        
     }

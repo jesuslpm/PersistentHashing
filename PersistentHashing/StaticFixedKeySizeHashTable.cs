@@ -12,116 +12,292 @@ namespace PersistentHashing
 
     public delegate ReadOnlySpan<byte> ValueFactory<in TKey>(TKey key);
     public delegate ReadOnlySpan<byte> ValueFactory<in TKey, in TArg>(TKey key, TArg arg);
+    public delegate ReadOnlySpan<byte> UpdateValueFactory<in TKey>(TKey key, ReadOnlySpan<byte> value);
 
 
-    public unsafe sealed class StaticFixedKeySizeHashTable<TKey>: IDisposable where TKey:unmanaged
+
+    public unsafe sealed class StaticFixedKeySizeHashTable<TKey>: StaticFixedSizeHashTable<TKey, long> where TKey:unmanaged
     {
         // <key><value-offset-padding><value-offset><distance padding><distance16><record-padding>
 
         private readonly StaticFixedSizeHashTable<TKey, long> hashTable;
+        private readonly MemoryMappingSession dataSession;
 
-        internal StaticFixedKeySizeHashTable(ref StaticHashTableConfig<TKey, long> config)
+
+        internal StaticFixedKeySizeHashTable(ref StaticHashTableConfig<TKey, long> config): base(ref config)
         {
-            hashTable = new StaticFixedSizeHashTable<TKey, long>(ref config);
         }
 
 
-        //public bool TryGetValue(TKey key, out ReadOnlySpan<byte> value)
-        //{
-            
-        //}
+
+        public bool TryGetValue(TKey key, out ReadOnlySpan<byte> value)
+        {
+            if (hashTable.TryGetValue(key, out long valueOffset))
+            {
+                value = ReadFromDataFile(valueOffset);
+                return true;
+            }
+            value = default;
+            return false;
+        }
 
 
-        //public bool TryGetValueNonBlocking(TKey key, out ReadOnlySpan<byte> value)
-        //{
-        //}
+        public bool TryGetValueNonBlocking(TKey key, out ReadOnlySpan<byte> value)
+        {
+            if (hashTable.TryGetValueNonBlocking(key, out long valueOffset))
+            {
+                value = ReadFromDataFile(valueOffset);
+                return true;
+            }
+            value = default;
+            return false;
+        }
 
-        //public void Add(TKey key, ReadOnlySpan<byte> value)
-        //{
-        //    if (!TryAdd(key, value))
-        //    {
-        //        throw new ArgumentException($"An element with the same key {key} already exists");
-        //    }
-        //}
+        public bool TryAdd(TKey key, ReadOnlySpan<byte> value)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, true);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    long valueOffset = WriteToDataFile(value);
+                    RobinHoodAdd(ref context, valueOffset);
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
 
-        //public bool TryAdd(TKey key, ReadOnlySpan<byte> value)
-        //{
+        public void Add(TKey key, ReadOnlySpan<byte> value)
+        {
+            if (!TryAdd(key, value))
+            {
+                throw new ArgumentException($"An element with the same key {key} already exists");
+            }
+        }
 
-        //}
-
-        //public ReadOnlySpan<byte> GetOrAdd(TKey key, ReadOnlySpan<byte> value)
-        //{
-        //}
-
-        //public ReadOnlySpan<byte> GetOrAdd(TKey key, ValueFactory<TKey> valueFactory)
-        //{
-
-        //}
-
-        //public ReadOnlySpan<byte> GetOrAdd<TArg>(TKey key, ValueFactory<TKey, TArg> valueFactory, TArg factoryArgument)
-        //{
-        //}
-
-        //public bool TryRemove(TKey key, out ReadOnlySpan<byte> value)
-        //{
-
-        //}
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ReadOnlySpan<byte> ReadFromDataFile(long offset)
+        {
+            byte* pointer = dataBaseAddress + offset;
+            return new ReadOnlySpan<byte>(pointer + sizeof(int), *(int*)pointer);
+        }
 
 
-        //public void Put(TKey key, ReadOnlySpan<byte> value)
-        //{
+        public ReadOnlySpan<byte> GetOrAdd(TKey key, ReadOnlySpan<byte> value)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                long valueOffset;
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    valueOffset = WriteToDataFile(value);
+                    RobinHoodAdd(ref context, valueOffset);
+                    return value;
+                }
+                valueOffset = GetValue(GetValuePointer(recordPointer));
+                return ReadFromDataFile(valueOffset);
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
 
-        //}
+        public ReadOnlySpan<byte> GetOrAdd(TKey key, ValueFactory<TKey> valueFactory)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                long valueOffset;
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    var value = valueFactory(key);
+                    valueOffset = WriteToDataFile(value);
+                    RobinHoodAdd(ref context, valueOffset);
+                    return value;
+                }
+                valueOffset = GetValue(GetValuePointer(recordPointer));
+                return ReadFromDataFile(valueOffset);
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+        public ReadOnlySpan<byte> GetOrAdd<TArg>(TKey key, ValueFactory<TKey, TArg> valueFactory, TArg factoryArgument)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                long valueOffset;
+                var recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    var value = valueFactory(key, factoryArgument);
+                    valueOffset = WriteToDataFile(value);
+                    RobinHoodAdd(ref context, valueOffset);
+                    return value;
+                }
+                valueOffset = GetValue(GetValuePointer(recordPointer));
+                return ReadFromDataFile(valueOffset);
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+        public bool TryRemove(TKey key, out ReadOnlySpan<byte> value)
+        {
+            if (TryRemove(key, out long valueOffset))
+            {
+                value = ReadFromDataFile(valueOffset);
+                return true;
+            }
+            value = default;
+            return false;
+        }
+
+
+        public void Put(TKey key, ReadOnlySpan<byte> value)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
+                long valueOffset = WriteToDataFile(value);
+                if (recordPointer == null)
+                {
+                    RobinHoodAdd(ref context, valueOffset);
+                }
+                else
+                {
+                    SetValue(recordPointer, valueOffset);
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
 
         public bool TryUpdate(TKey key, ReadOnlySpan<byte> newValue, ReadOnlySpan<byte> comparisonValue)
         {
-            return true;
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    return false;
+                }
+                else
+                {
+                    long valueOffset = GetValue(GetValuePointer(recordPointer));
+                    var value = ReadFromDataFile(valueOffset);
+                    if (comparisonValue.SequenceEqual(value))
+                    { 
+                        long newValueOffset = WriteToDataFile(newValue);
+                        SetValue(recordPointer, newValueOffset);
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
         }
 
-        //public ReadOnlySpan<byte> AddOrUpdate(TKey key, ReadOnlySpan<byte> addValue, Func<TKey, ReadOnlySpan<byte>, ReadOnlySpan<byte>> updateValueFactory)
-        //{
+        public ReadOnlySpan<byte> AddOrUpdate(TKey key, ReadOnlySpan<byte> addValue, UpdateValueFactory<TKey> updateValueFactory)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
+               
+                if (recordPointer == null)
+                {
+                    long valueOffset = WriteToDataFile(addValue);
+                    RobinHoodAdd(ref context, valueOffset);
+                    return addValue;
+                }
+                else
+                {
+                    long valueOffset = GetValue(GetValuePointer(recordPointer));
+                    var value = ReadFromDataFile(valueOffset);
+                    var newValue = updateValueFactory(key, value);
+                    long newValueOffset = WriteToDataFile(newValue);
+                    SetValue(recordPointer, newValueOffset);
+                    return newValue;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
 
-        //}
+        public ReadOnlySpan<byte> AddOrUpdate(TKey key, ValueFactory<TKey> addValueFactory, UpdateValueFactory<TKey> updateValueFactory)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
 
-        //public ReadOnlySpan<byte> AddOrUpdate(TKey key, Func<TKey, ReadOnlySpan<byte>> addValueFactory, Func<TKey, ReadOnlySpan<byte>, ReadOnlySpan<byte>> updateValueFactory)
-        //{
+                if (recordPointer == null)
+                {
+                    var addValue = addValueFactory(key);
+                    long valueOffset = WriteToDataFile(addValue);
+                    RobinHoodAdd(ref context, valueOffset);
+                    return addValue;
+                }
+                else
+                {
+                    long valueOffset = GetValue(GetValuePointer(recordPointer));
+                    var value = ReadFromDataFile(valueOffset);
+                    var newValue = updateValueFactory(key, value);
+                    long newValueOffset = WriteToDataFile(newValue);
+                    SetValue(recordPointer, newValueOffset);
+                    return newValue;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
 
-        //}
-
-        ////[MethodImpl(MethodImplOptions.AggressiveInlining)]
-        //private void RobinHoodAdd(ref OperationContext context,  ReadOnlySpan<byte> value)
-        //{
- 
-        //}
-
-
-
-        //public void Delete(TKey key)
-        //{
-        //    if (!Remove(key))
-        //    {
-        //        throw new ArgumentException($"key {key} not found");
-        //    }
-        //}
-
-        //public bool Remove(TKey key)
-        //{
-
-        //}
-
-
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
-        //private byte* FindRecordNonBlocking(ref NonBlockingOperationContext context)
-        //{
-
-        //}
-
-
-
-
-
-
-        public bool IsDisposed { get; private set; }
 
         //public ICollection<TKey> Keys => new StaticFixedSizeHashTableKeyCollection<TKey, ReadOnlySpan<byte>>(this);
 
@@ -131,34 +307,24 @@ namespace PersistentHashing
 
         //public bool IsReadOnly => false;
 
-        //public ReadOnlySpan<byte> this[TKey key]
-        //{
-        //    get
-        //    {
-        //        if (!TryGetValue(key, out ReadOnlySpan<byte> value))
-        //        {
-        //            throw new ArgumentException($"Key {key} not found.");
-        //        }
-        //        return value;
-        //    }
-        //    set
-        //    {
-        //        Put(key, value);
-        //    }
-        //}
-
-        public void Dispose()
+        public new ReadOnlySpan<byte> this[TKey key]
         {
-            if (IsDisposed) return;
-            IsDisposed = true;
-            //if (this.config.TableMappingSession != null) this.config.TableMappingSession.Dispose();
-            //if (this.config.TableMemoryMapper != null) this.config.TableMemoryMapper.Dispose();
+            get
+            {
+                if (!TryGetValue(key, out ReadOnlySpan<byte> value))
+                {
+                    throw new ArgumentException($"Key {key} not found.");
+                }
+                return value;
+            }
+            set
+            {
+                Put(key, value);
+            }
         }
 
-        //public void Flush()
-        //{
-        //    this.config.TableMemoryMapper.Flush();
-        //}
+
+
 
         //public void Add(KeyValuePair<TKey, ReadOnlySpan<byte>> item)
         //{

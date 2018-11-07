@@ -33,9 +33,22 @@ namespace PersistentHashing
 
         public long Count => config.HeaderPointer->RecordCount;
 
+        private readonly MemoryMappingSession dataSession;
+        internal volatile byte* dataBaseAddress;
+
         internal StaticFixedSizeHashTable(ref StaticHashTableConfig<TKey, TValue> config)
         {
             this.config = config;
+            if (config.DataFile != null)
+            {
+                dataSession = config.DataFile.OpenSession();
+                dataSession.BaseAddressChanged += DataBaseAddressChanged;
+            }
+        }
+
+        private void DataBaseAddressChanged(object sender, MemoryMappingSession.BaseAddressChangedEventArgs e)
+        {
+            dataBaseAddress = e.BaseAddress;
         }
 
         public StaticFixedSizeHashTable(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> keyComparer = null,  bool isAligned = false)
@@ -116,7 +129,7 @@ namespace PersistentHashing
 
             // We impose the following constraint: max locks per operation cannot be greater than 8
             // We use one long as an array of 8 bools to keep track of locked sync objects
-            // we want at least 64 slots per chunk when SlotCount >= 512, for smaller tables SlotCount/8
+            // we want at least 64 slots per chunk when SlotCount >= 512, for smaller tables SlotCount/8 slots per chunk
             // with 8 locks and 64 slots per chunk, we can cover 8*64 = 512 slots and (8 - 1)* 64 = 448 MaxAllowedDistance  
             // Most of the time, when distance < 64, we only need to lock one sync object
             int minChunkSize = (int) Math.Min(config.SlotCount / 8, 64);
@@ -145,8 +158,8 @@ namespace PersistentHashing
 
 
             // We use an array of max locks per operation booleans to keep track of locked sync objects
-            // (config.MaxAllowedDistance << config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2) this weird thing is ceil(MaxAllowedDistance FloatDiv ChunkSize) + 1
-            config.MaxLocksPerOperation = Math.Max((int)((config.MaxAllowedDistance << config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2)), 2);
+            // (config.MaxAllowedDistance >> config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2) this weird thing is ceil(MaxAllowedDistance FloatDiv ChunkSize) + 1
+            config.MaxLocksPerOperation = Math.Max((int)((config.MaxAllowedDistance >> config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2)), 2);
 
             Debug.Assert(Bits.IsPowerOfTwo(config.ChunkSize));
             Debug.Assert(config.MaxLocksPerOperation > 1 && config.MaxLocksPerOperation <= 8);
@@ -190,7 +203,7 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SetValue(byte* recordPointer, TValue value)
+        internal void SetValue(byte* recordPointer, TValue value)
         {
             *(TValue*)(recordPointer + config.ValueOffset) = value;
         }
@@ -313,12 +326,27 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void InitializeOperationContext(ref OperationContext context, TKey key, void* takenLocks, bool isWriting)
+        internal void InitializeOperationContext(ref OperationContext context, TKey key, void* takenLocks, bool isWriting)
         {
             context.CurrentSlot = context.InitialSlot = GetInitialSlot(key);
             context.Key = key;
             context.TakenLocks = (bool*)takenLocks;
             context.IsWriting = isWriting;
+        }
+
+        public bool ContainsKey(TKey key)
+        {
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: false);
+            try
+            {
+                return FindRecord(ref context) != null;
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
         }
 
         public bool TryGetValue(TKey key, out TValue value)
@@ -342,6 +370,8 @@ namespace PersistentHashing
                 ReleaseLocks(ref context);
             }
         }
+
+
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsNonBlockingOperationValid(ref NonBlockingOperationContext context)
@@ -389,92 +419,116 @@ namespace PersistentHashing
             }
         }
 
-        public bool TryAdd(TKey key, TValue value)
+
+        internal long WriteToDataFile(ReadOnlySpan<byte> value)
+        {
+            int bytesToAllocateAndCopy = value.Length + sizeof(int);
+            var valueOffset = this.config.DataFile.Allocate(bytesToAllocateAndCopy);
+            byte* destination = dataBaseAddress + valueOffset;
+            *(int*)destination = value.Length;
+            var destinationSpan = new Span<byte>(destination + sizeof(int), value.Length);
+            value.CopyTo(destinationSpan);
+            return valueOffset;
+        }
+
+        internal bool TryAdd<TArg>(TKey key, Func<TKey, TArg, TValue> valueFactory, TArg factoryArgument, out TValue existingOrAddedValue)
         {
             long takenLocks = 0L;
             var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks, true);
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
             try
             {
                 byte* recordPointer = FindRecord(ref context);
-                if (recordPointer == null)
+                if (recordPointer == null) // not found
+                {
+                    existingOrAddedValue = valueFactory(key, factoryArgument); // added value
+                    RobinHoodAdd(ref context, existingOrAddedValue);
+                    return true;
+                }
+                existingOrAddedValue = GetValue(GetValuePointer(recordPointer)); // existing value
+                return false;
+            }
+            finally
+            {
+                ReleaseLocks(ref context); // taken by FindRecord and RobinHoodAdd
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static TValue IdentityValueFactory(TKey key, TValue value)
+        {
+            return value;
+        }
+        static readonly Func<TKey, TValue, TValue> IdentityValueFactoryFunction = IdentityValueFactory;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static TValue NestedValueFactory(TKey key, Func<TKey, TValue> valueFactory)
+        {
+            return valueFactory(key);
+        }
+        static readonly Func<TKey, Func<TKey, TValue>, TValue> NestedValueFactoryFunction = NestedValueFactory;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryAdd(TKey key, TValue value)
+        {
+            // Trade-off: Performance vs DRY. The WET a more performant version won this time.
+
+            //DRY version:
+            //return TryAdd(key, IdentityValueFactoryFunction, value, out TValue existingOrAddedValue);
+
+
+            // this is the WET and faster version:
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
+                if (recordPointer == null) // not found
                 {
                     RobinHoodAdd(ref context, value);
                     return true;
                 }
-                else
-                {
-                    return false;
-                }
+                return false;
             }
             finally
             {
-                ReleaseLocks(ref context);
+                ReleaseLocks(ref context); // taken by FindRecord and RobinHoodAdd
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryAdd(TKey key, Func<TKey, TValue> valueFactory)
+        {
+            // The DRY version won this time. Writing everything twice is tiring and boring :-)
+            return TryAdd(key, NestedValueFactoryFunction, valueFactory, out TValue existingOrAddedValue);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryAdd<TArg>(TKey key, Func<TKey, TArg, TValue> valueFactory, TArg factoryArgument)
+        {
+            return TryAdd(key, valueFactory, factoryArgument, out TValue existingOrAddedValue);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TValue GetOrAdd(TKey key, TValue value)
         {
-            long takenLocks = 0L;
-            var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
-            try
-            {
-                var recordPointer = FindRecord(ref context);
-                if (recordPointer == null)
-                {
-                    RobinHoodAdd(ref context, value);
-                }
-                return value;
-            }
-            finally
-            {
-                ReleaseLocks(ref context);
-            }
+            //TODO: PERF consider the WET version
+            return GetOrAdd(key, IdentityValueFactoryFunction, value);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TValue GetOrAdd(TKey key, Func<TKey, TValue> valueFactory)
         {
-            long takenLocks = 0L;
-            var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
-            try
-            {
-                byte* recordPointer = FindRecord(ref context);
-                if (recordPointer == null)
-                {
-                    var value = valueFactory(key);
-                    RobinHoodAdd(ref context, value);
-                    return value;
-                }
-                return GetValue(GetValuePointer(recordPointer));
-            }
-            finally
-            {
-                ReleaseLocks(ref context);
-            }
+            //TODO: PERF consider the WET version
+            return GetOrAdd(key, NestedValueFactoryFunction, valueFactory);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TValue GetOrAdd<TArg>(TKey key, Func<TKey, TArg, TValue> valueFactory, TArg factoryArgument)
         {
-            long takenLocks = 0L;
-            var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
-            try
-            {
-                byte* recordPointer = FindRecord(ref context);
-                if (recordPointer == null)
-                {
-                    var value = valueFactory(key, factoryArgument);
-                    RobinHoodAdd(ref context, value);
-                    return value;
-                }
-                return GetValue(GetValuePointer(recordPointer));
-            }
-            finally
-            {
-                ReleaseLocks(ref context);
-            }
+            TryAdd(key, valueFactory, factoryArgument, out TValue value);
+            return value;
         }
 
         public bool TryRemove(TKey key, out TValue value)
@@ -533,20 +587,10 @@ namespace PersistentHashing
             }
         }
 
-
-        public bool ContainsKey(TKey key)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Remove(TKey key)
         {
-            long takenLocks = 0L;
-            var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks, isWriting: false);
-            try
-            {
-                return FindRecord(ref context) != null;
-            }
-            finally
-            {
-                ReleaseLocks(ref context);
-            }
+            return TryRemove(key, out TValue removedValue);
         }
 
         public void Put(TKey key, TValue value)
@@ -601,32 +645,6 @@ namespace PersistentHashing
             }
         }
 
-        public TValue AddOrUpdate(TKey key, TValue addValue, Func<TKey, TValue, TValue> updateValueFactory)
-        {
-            long takenLocks = 0L;
-            var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
-            try
-            {
-                byte* recordPointer = FindRecord(ref context);
-                if (recordPointer == null)
-                {
-                    RobinHoodAdd(ref context, addValue);
-                    return addValue;
-                }
-                else
-                {
-                    TValue value = GetValue(GetValuePointer(recordPointer));
-                    TValue newValue = updateValueFactory(key, value);
-                    SetValue(recordPointer, newValue);
-                    return newValue;
-                }
-            }
-            finally
-            {
-                ReleaseLocks(ref context);
-            }
-        }
 
         public TValue AddOrUpdate(TKey key, Func<TKey, TValue> addValueFactory, Func<TKey, TValue, TValue> updateValueFactory)
         {
@@ -657,8 +675,40 @@ namespace PersistentHashing
 
         }
 
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void RobinHoodAdd(ref OperationContext context,  TValue value)
+        public TValue AddOrUpdate(TKey key, TValue addValue, Func<TKey, TValue, TValue> updateValueFactory)
+        {
+            // implementing this method with one single line of code is tempting, 
+            // but it allocates a new delegate instance each time that has to be called.
+            // return AddOrUpdate(key, _ => addValue, updateValueFactory);
+
+            // Prefer the WET version, no allocations and no delegate calls.
+            long takenLocks = 0L;
+            var context = new OperationContext();
+            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
+            try
+            {
+                byte* recordPointer = FindRecord(ref context);
+                if (recordPointer == null)
+                {
+                    RobinHoodAdd(ref context, addValue);
+                    return addValue;
+                }
+                else
+                {
+                    TValue existingValue = GetValue(GetValuePointer(recordPointer));
+                    TValue newValue = updateValueFactory(key, existingValue);
+                    SetValue(recordPointer, newValue);
+                    return newValue;
+                }
+            }
+            finally
+            {
+                ReleaseLocks(ref context);
+            }
+        }
+
+
+        internal void RobinHoodAdd(ref OperationContext context,  TValue value)
         {
             byte* recordPointer =  GetRecordPointer(context.InitialSlot);
             short distance = 1; //start with 1 because 0 is reserved for empty slots.
@@ -734,60 +784,6 @@ namespace PersistentHashing
             }
         }
 
-        public bool Remove(TKey key)
-        {
-            long takenLocks = 0L;
-            var context = new OperationContext();
-            InitializeOperationContext(ref context, key, &takenLocks, isWriting: true);
-            try
-            {
-                byte* emptyRecordPointer = FindRecord(ref context);
-                if (emptyRecordPointer == null)
-                {
-                    return false;
-                }
-#if DEBUG
-                Interlocked.Add(ref config.HeaderPointer->DistanceSum, 1 - GetDistance(emptyRecordPointer));
-#endif
-                byte* currentRecordPointer = emptyRecordPointer;
-                while (true)
-                {
-                    /*
-                     * shift backward all entries following the entry to delete until either find an empty slot, 
-                     * or a record with a distance of 0 (1 in our case)
-                     * http://codecapsule.com/2013/11/17/robin-hood-hashing-backward-shift-deletion/
-                     */
-                    
-                    currentRecordPointer += config.RecordSize;
-                    context.CurrentSlot++;
-                    if (currentRecordPointer >= config.EndTablePointer) // start from begining when reaching the end
-                    {
-                        currentRecordPointer = config.TablePointer;
-                        context.CurrentSlot = 0;
-                    }
-                    LockIfNeeded(ref context);
-                    short distance = GetDistance(currentRecordPointer);
-                    if (distance <= 1)
-                    {
-                        SetDistance(emptyRecordPointer, 0);
-                        Interlocked.Decrement(ref config.HeaderPointer->RecordCount);
-                        return true;
-                    }
-                    SetKey(emptyRecordPointer, GetKey(currentRecordPointer));
-                    SetValue(emptyRecordPointer, GetValue(currentRecordPointer));
-                    SetDistance(emptyRecordPointer, (short)(distance - 1));
-#if DEBUG
-                    Interlocked.Decrement(ref config.HeaderPointer->DistanceSum);
-#endif
-                    emptyRecordPointer = currentRecordPointer;
-                }
-            }
-            finally
-            {
-                ReleaseLocks(ref context);
-            }
-        }
-
         private unsafe struct NonBlockingOperationContext
         {
             public long InitialSlot;
@@ -796,10 +792,10 @@ namespace PersistentHashing
             public TKey Key;
         }
 
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte* FindRecordNonBlocking(ref NonBlockingOperationContext context)
         {
             var spinWait = new SpinWait();
+
         start:
             long currentSlot = context.InitialSlot;
             int chunkIndex = (int)(currentSlot >> config.ChunkBits);
@@ -840,7 +836,7 @@ namespace PersistentHashing
             }
         }
 
-        private unsafe struct OperationContext
+        internal unsafe struct OperationContext
         {
             public long InitialSlot;
             public long RemainingSlotsInChunk;
@@ -851,7 +847,7 @@ namespace PersistentHashing
             public bool IsWriting;
         }
 
-        private byte* FindRecord(ref OperationContext context)
+        internal byte* FindRecord(ref OperationContext context)
         {
             byte* recordPointer = GetRecordPointer(context.InitialSlot);
             int distance = 1;
@@ -902,7 +898,7 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReleaseLocks(ref OperationContext context)
+        internal void ReleaseLocks(ref OperationContext context)
         {
             int chunkIndex = (int) (context.InitialSlot >> config.ChunkBits);
             /*
@@ -974,7 +970,8 @@ namespace PersistentHashing
 
         public void Flush()
         {
-            this.config.TableMemoryMapper.Flush();
+            config.TableMemoryMapper.Flush();
+            config.DataFile?.Flush();
         }
 
         public void Add(KeyValuePair<TKey, TValue> item)
@@ -1017,7 +1014,6 @@ namespace PersistentHashing
         {
             return Remove(item.Key);
         }
-
 
         public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
         {

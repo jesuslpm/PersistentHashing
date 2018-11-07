@@ -12,7 +12,7 @@ namespace Benchmarks
 {
     static class Bench
     {
-        const int n = 100_000_000;
+        const int n = 40_000_000;
 
         private static readonly int ThreadCount = Environment.ProcessorCount;
 
@@ -22,7 +22,7 @@ namespace Benchmarks
             {
                 //BenchmarkDictionarySequential, BenchmarkDictionaryRandom,
                 //BenchmarkStaticFixedSizeHashTableSequential, BenchmarkStaticFixedSizeHashTableRandom,
-                //BenchmarkStaticFixedSizeHashTableMultiThreaded,
+                BenchmarkStaticFixedSizeHashTableMultiThreaded,
                 BenchmarkConcurrentDictionaryMultiThreaded,
                 //BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
                 //BenchmarkManualResetEvent,

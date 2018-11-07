@@ -32,12 +32,12 @@ namespace PersistentHashing
             return baseAddress;
         }
 
-        internal static  MemoryMapping Create(FileStream fs)
+        internal static MemoryMapping Create(FileStream fs, long bytesToMap = 0)
         {
             var mmf = MemoryMappedFile.CreateFromFile(fs, null, fs.Length, MemoryMappedFileAccess.ReadWrite, HandleInheritability.None, true);
             var address = Win32FileMapping.MapViewOfFileEx(mmf.SafeMemoryMappedFileHandle.DangerousGetHandle(),
                 Win32FileMapping.FileMapAccess.Read | Win32FileMapping.FileMapAccess.Write,
-                0, 0, new UIntPtr((ulong)fs.Length), null);
+                0, 0, new UIntPtr((ulong)bytesToMap), null);
             if (address == null) throw new Win32Exception();
 
             var area = new MemoryMappedArea

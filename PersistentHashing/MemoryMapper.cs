@@ -8,12 +8,12 @@ namespace PersistentHashing
 {
     public unsafe sealed class MemoryMapper : IDisposable
     {
-        private FileStream fs;
+        internal FileStream fs;
         internal MemoryMapping mapping;
 
         private HashSet<MemoryMappingSession> sessions = new HashSet<MemoryMappingSession>();
 
-        internal object sessionsSyncObject = new object();
+        internal readonly object SyncObject = new object();
 
         public long Length
         {
@@ -66,7 +66,7 @@ namespace PersistentHashing
         public void Grow(long bytesToGrow)
         {
             CheckDisposed();
-            lock (sessionsSyncObject)
+            lock (SyncObject)
             {
                 var newMapping = MemoryMapping.Grow(bytesToGrow, this.mapping);
                 if (mapping != newMapping)
@@ -85,7 +85,7 @@ namespace PersistentHashing
         public MemoryMappingSession OpenSession()
         {
             CheckDisposed();
-            lock (sessionsSyncObject)
+            lock (SyncObject)
             {
                 var session = new MemoryMappingSession(this);
                 sessions.Add(session);
