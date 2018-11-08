@@ -6,15 +6,15 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    internal unsafe class StaticFixedSizeHashTableRecordEnumerator<TKey, TValue> : IEnumerator<KeyValuePair<TKey, TValue>> where TKey:unmanaged where TValue : unmanaged
+    internal unsafe class StaticConcurrentFixedSizeHashTableRecordEnumerator<TKey, TValue> : IEnumerator<KeyValuePair<TKey, TValue>> where TKey:unmanaged where TValue : unmanaged
     {
         private byte* recordPointer;
-        private readonly StaticFixedSizeHashTable<TKey, TValue> hashTable;
+        private readonly StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable;
         private long slot;
         private KeyValuePair<TKey, TValue> _current;
         
 
-        public StaticFixedSizeHashTableRecordEnumerator(StaticFixedSizeHashTable<TKey, TValue> hashTable )
+        public StaticConcurrentFixedSizeHashTableRecordEnumerator(StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable )
         {
             this.hashTable = hashTable;
             recordPointer = hashTable.config.TablePointer - hashTable.config.RecordSize;
@@ -56,8 +56,8 @@ namespace PersistentHashing
                     if (hashTable.GetDistance(recordPointer) > 0)
                     {
                         _current = new KeyValuePair<TKey, TValue>(
-                            StaticFixedSizeHashTable<TKey, TValue>.GetKey(hashTable.GetKeyPointer(recordPointer)),
-                            StaticFixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer)));
+                            StaticConcurrentFixedSizeHashTable<TKey, TValue>.GetKey(hashTable.GetKeyPointer(recordPointer)),
+                            StaticConcurrentFixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer)));
                         return true;
                     }
                 }

@@ -9,7 +9,7 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    public unsafe sealed class StaticFixedSizeStore<TKey, TValue>: StaticHashTableStore<TKey, TValue>, IDisposable 
+    public unsafe sealed class StaticFixedSizeStore<TKey, TValue>: StaticStore<TKey, TValue>, IDisposable 
         where TKey:unmanaged 
         where TValue: unmanaged
     {
@@ -22,7 +22,7 @@ namespace PersistentHashing
 
         public override void Initialize()
         {
-            config.KeyOffset = 0;
+           
             CalculateOffsetsAndSizesDependingOnAlignement();
             long fileSize = (long)sizeof(StaticFixedSizeHashTableFileHeader) + config.SlotCount * config.RecordSize;
             fileSize += (Constants.AllocationGranularity - (fileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
@@ -44,6 +44,7 @@ namespace PersistentHashing
 
         private void CalculateOffsetsAndSizesDependingOnAlignement()
         {
+            config.KeyOffset = 0;
             config.KeySize = sizeof(TKey);
             config.ValueSize = sizeof(long);
             config.DistanceSize = sizeof(short);
@@ -60,9 +61,11 @@ namespace PersistentHashing
             config.RecordSize = config.DistanceOffset + config.DistanceSize + GetPadding(config.DistanceOffset + config.DistanceSize, slotAlignement);
         }
 
-        StaticFixedSizeHashTable<TKey, TValue> Open()
+        StaticConcurrentFixedSizeHashTable<TKey, TValue> OpenThreadSafe()
         {
-            return new StaticFixedSizeHashTable<TKey, TValue>(ref config);
+            EnsureInitialized();
+            if (!config.IsThreadSafe) throw new InvalidOperationException("This store is not thread safe");
+            return new StaticConcurrentFixedSizeHashTable<TKey, TValue>(config);
         }
     }
 }

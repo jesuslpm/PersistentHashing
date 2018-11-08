@@ -80,6 +80,17 @@ namespace PersistentHashing
             return newFreeSpaceOffset - bytesToAllocate;
         }
 
+        internal long Write(ReadOnlySpan<byte> value, byte* baseAddress)
+        {
+            int bytesToAllocateAndCopy = value.Length + sizeof(int);
+            var valueOffset = Allocate(bytesToAllocateAndCopy);
+            byte* destination = baseAddress + valueOffset;
+            *(int*)destination = value.Length;
+            var destinationSpan = new Span<byte>(destination + sizeof(int), value.Length);
+            value.CopyTo(destinationSpan);
+            return valueOffset;
+        }
+
         public bool IsDisposed { get; private set; }
 
         private void Dispose(bool disposing)

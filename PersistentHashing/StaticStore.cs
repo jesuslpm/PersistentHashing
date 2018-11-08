@@ -9,7 +9,7 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    public unsafe abstract class StaticHashTableStore<TKey, TValue>: IDisposable
+    public unsafe abstract class StaticStore<TKey, TValue>: IDisposable
     {
         // <key><value-padding><value><distance padding><distance16><record-padding>
 
@@ -36,10 +36,12 @@ namespace PersistentHashing
         public string HashTableFilePath => config.HashTableFilePath;
         public string DataFilePath => config.DataFilePath;
 
-        private bool isInitialized;
+
+        private object initializeSyncObject = new object();
+        protected volatile bool isInitialized;
 
 
-        public StaticHashTableStore(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
+        public StaticStore(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
         {
             config.HashTableFilePath = filePathWithoutExtension + ".HashTable";
             config.DataFilePath = filePathWithoutExtension + ".DataFile";
@@ -161,7 +163,7 @@ namespace PersistentHashing
         {
             if ( config.HeaderPointer->Magic != StaticFixedSizeHashTableFileHeader.MagicNumber)
             {
-                throw new FormatException($"This is not a {nameof(StaticHashTableStore<TKey, TValue>)} file");
+                throw new FormatException($"This is not a {nameof(StaticStore<TKey, TValue>)} file");
             }
             if (config.HeaderPointer->IsAligned != config.IsAligned)
             {
@@ -223,6 +225,18 @@ namespace PersistentHashing
         }
 
         public abstract void Initialize();
+
+
+        protected void EnsureInitialized()
+        {
+            if (isInitialized) return;
+            lock (initializeSyncObject)
+            {
+                if (isInitialized) return;
+                Initialize();
+                isInitialized = true;
+            }
+        }
        
     }
 }

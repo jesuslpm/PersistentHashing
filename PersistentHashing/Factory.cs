@@ -9,12 +9,12 @@ namespace PersistentHashing
 
     public static class Factory
     {
-        public static StaticFixedSizeHashTable<TKey, TValue> GetStaticFixedSizeHashTable<TKey, TValue>(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)  
-            where TKey:unmanaged 
-            where TValue:unmanaged
-        {
-            throw new NotImplementedException();
-        }
+        //public static StaticFixedSizeHashTable<TKey, TValue> GetStaticFixedSizeHashTable<TKey, TValue>(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)  
+        //    where TKey:unmanaged 
+        //    where TValue:unmanaged
+        //{
+        //    throw new NotImplementedException();
+        //}
 
         public static object GetStaticFixedKeySizeStore<TKey>(string filePathWithoutExtension)
             where TKey : unmanaged
@@ -27,27 +27,27 @@ namespace PersistentHashing
             throw new NotImplementedException();
         }
 
-        public static object GetConcurrentStaticFixedSizeHashTable(string filePathWithoutExtension)
+        public static object GetStaticConcurrentFixedSizeHashTable(string filePathWithoutExtension)
         {
             throw new NotImplementedException();
         }
 
-        public static object GetConcurrentStaticFixedKeySizeStore(string filePathWithoutExtension)
+        public static object GetStaticConcurrentFixedKeySizeStore(string filePathWithoutExtension)
         {
             throw new NotImplementedException();
         }
 
-        public static object GetConcurrentStaticVariableSizeStore()
+        public static object GetStaticConcurrentStore()
         {
             throw new NotImplementedException();
         }
 
-        public static object GetDynamicVariableSizeStore()
+        public static object GetDynamicStore()
         {
             throw new NotImplementedException();
         }
 
-        public static object GetConcurrentDynamicVariableSizeStore()
+        public static object GetDynamicConcurrentStore()
         {
             throw new NotImplementedException();
         }

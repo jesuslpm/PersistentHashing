@@ -176,7 +176,7 @@ namespace PersistentHashing
         {
             if ( config.HeaderPointer->Magic != StaticFixedSizeHashTableFileHeader.MagicNumber)
             {
-                throw new FormatException($"This is not a {nameof(StaticFixedSizeHashTable<TKey, long>)} file");
+                throw new FormatException($"This is not a {nameof(StaticFixedKeySizeHashTableStore<TKey>)} file");
             }
             if (config.HeaderPointer->IsAligned != config.IsAligned)
             {
@@ -253,9 +253,9 @@ namespace PersistentHashing
             this.config.TableMemoryMapper.Flush();
         }
 
-        StaticFixedKeySizeHashTable<TKey> Open()
+        StaticConcurrentFixedKeySizeHashTable<TKey> Open()
         {
-            return new StaticFixedKeySizeHashTable<TKey>(ref config);
+            return new StaticConcurrentFixedKeySizeHashTable<TKey>(config);
         }
        
     }
