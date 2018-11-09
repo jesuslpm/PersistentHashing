@@ -67,7 +67,7 @@ namespace TestZeros
                         pointer = (long*)baseAddress;
                         while (pointer < endAddress)
                         {
-                            if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException();
+                            cancellationToken.ThrowIfCancellationRequested();
                             *pointer = -1L;
                             pointer++;
                         }
