@@ -9,11 +9,11 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    public unsafe sealed class StaticFixedKeySizeHashTableStore<TKey>: IDisposable where TKey:unmanaged 
+    public unsafe abstract class StaticStore<TKey, TValue>: IDisposable
     {
         // <key><value-padding><value><distance padding><distance16><record-padding>
 
-        internal StaticHashTableConfig<TKey, long> config;
+        internal StaticHashTableConfig<TKey, TValue> config;
 
         /// <summary>
         /// Max distance ever seen in the hash table. 
@@ -33,55 +33,39 @@ namespace PersistentHashing
 
         public long Count => config.HeaderPointer->RecordCount;
 
+        public string HashTableFilePath => config.HashTableFilePath;
+        public string DataFilePath => config.DataFilePath;
 
-        public StaticFixedKeySizeHashTableStore(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> keyComparer = null,  bool isAligned = false)
+
+        private object initializeSyncObject = new object();
+        protected volatile bool isInitialized;
+
+
+        public StaticStore(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
         {
-            config.IsAligned = isAligned;
-            config.KeyOffset = 0;
-            this.config.HashFunction = hashFunction;
-            this.config.KeyComparer = config.KeyComparer ?? EqualityComparer<TKey>.Default;
-            CalculateOffsetsAndSizesDependingOnAlignement();
+            config.HashTableFilePath = filePathWithoutExtension + ".HashTable";
+            config.DataFilePath = filePathWithoutExtension + ".DataFile";
+            config.IsNew = !File.Exists(config.HashTableFilePath);
+            
 
             // SlotCount 1, 2, 4, and 8 are edge cases that is not worth to support. So min slot count is 16, it doesn't show "anomalies".
             // (capacity + 6) / 7 is Ceil(capacity FloatDiv 7)
             // we want a MaxLoadFactor = Capacity/SlotCount = 87.5% this is why we set SlotCount = capacity + capacity/7 => 7 * slotCount = 8 * capacity => capacity/SlotCount = 7/8 = 87.5%
             config.SlotCount = Math.Max(capacity + (capacity + 6)/7, 16);
-
             config.SlotCount = Bits.IsPowerOfTwo(config.SlotCount) ? config.SlotCount : Bits.NextPowerOf2(config.SlotCount);
-            this.config.Capacity = (config.SlotCount / 8) * 7; // max load factor = 7/8 = 87.5%
+            config.SlotBits = Bits.MostSignificantBit(config.SlotCount);
+            config.Capacity = (config.SlotCount / 8) * 7; // max load factor = 7/8 = 87.5%
             config.HashMask = config.SlotCount - 1L;
 
-            long fileSize = (long) sizeof(StaticFixedSizeHashTableFileHeader) +  config.SlotCount * config.RecordSize;
-            fileSize += (Constants.AllocationGranularity - (fileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
-
-            bool isNew = !File.Exists(filePath);
-
-            config.TableMemoryMapper = new MemoryMapper(filePath + ".HashTable", (long) fileSize);
-            config.DataFile = new DataFile(filePath + ".DataFile", 16 * 1024 * 1024, 16 * 1024 * 1024);
-            config.TableMappingSession = config.TableMemoryMapper.OpenSession();
-
-            config.TableFileBaseAddress = config.TableMappingSession.GetBaseAddress();
-            config.HeaderPointer = (StaticFixedSizeHashTableFileHeader*)config.TableFileBaseAddress;
-
-
-            if (isNew)
+            if (options != null)
             {
-                InitializeHeader();
+                config.HashFunction = options.HashFunction;
+                config.IsAligned = options.IsAligned;
+                config.KeyComparer = options.KeyComparer;
+                config.ValueComparer = options.ValueComparer;
             }
-            else
-            {
-                ValidateHeader();
-                config.SlotCount = config.HeaderPointer->SlotCount;
-            }
-            config.TablePointer = config.TableFileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
-            config.EndTablePointer = config.TablePointer + config.RecordSize * config.SlotCount;
-            config.SlotBits = Bits.MostSignificantBit(config.SlotCount);
+            
 
-            InitializeSynchronization();
-        }
-
-        private void InitializeSynchronization()
-        {
             /*
              * We use System.Threading.Monitor To achieve synchronization
              * The table is divided into equal sized chunks of slots.
@@ -92,7 +76,7 @@ namespace PersistentHashing
              * But we never lock more than 8 sync objects in a single operation.
              */
 
-           
+
             /*
              According to the Birthday problem and using the Square approximation
              p(n) = n^2/2/m. where p is the probalitity that at least two people have the same birthday, 
@@ -115,7 +99,7 @@ namespace PersistentHashing
             // we want at least 64 slots per chunk when SlotCount >= 512, for smaller tables SlotCount/8
             // with 8 locks and 64 slots per chunk, we can cover 8*64 = 512 slots and (8 - 1)* 64 = 448 MaxAllowedDistance  
             // Most of the time, when distance < 64, we only need to lock one sync object
-            int minChunkSize = (int) Math.Min(config.SlotCount / 8, 64);
+            int minChunkSize = (int)Math.Min(config.SlotCount / 8, 64);
             config.ChunkSize = Math.Max(config.SlotCount / config.ChunkCount, minChunkSize);
             config.ChunkMask = config.ChunkSize - 1;
             config.ChunkBits = Bits.MostSignificantBit(config.ChunkSize);
@@ -132,12 +116,12 @@ namespace PersistentHashing
             // for SlotCount = 512, the maximum MaxAllowedDistance without deadlocks is (config.ChunkCount - 2) * ChunkSize = 6*64 = 384.
             // Doing the math we get a=6, k=42, log2(slotCount) = config.SlotCountBits. 
             // 42 is "The Answer to the Ultimate Question of Life, the Universe, and Everything". Is it just coincidence?
-            config.MaxAllowedDistance = (int) Math.Min(7 * config.ChunkSize, 6 + 42 * config.SlotBits);
+            config.MaxAllowedDistance = (int)Math.Min(7 * config.ChunkSize, 6 + 42 * config.SlotBits);
 
             // We nedd to adjust MaxAllowedDistance to avoid deadlocks. A deadlock will occur when a thread A start locking the first chunk,
             // another thread B start locking the last chunk, then B tries to lock the first chunk. If A reaches the
             // last chunk we have a dealock. Threfore MaxAllowedDistance must not span more than config.ChunkCount - 2 chunks.
-            config.MaxAllowedDistance = (int) Math.Min((config.ChunkCount - 2) * config.ChunkSize, config.MaxAllowedDistance);
+            config.MaxAllowedDistance = (int)Math.Min((config.ChunkCount - 2) * config.ChunkSize, config.MaxAllowedDistance);
 
 
             // We use an array of max locks per operation booleans to keep track of locked sync objects
@@ -153,12 +137,15 @@ namespace PersistentHashing
             // MaxAllowedDistance is reached before deadlocking.
             Debug.Assert(config.MaxAllowedDistance <= (config.ChunkCount - 2) * config.ChunkSize);
 
-            config.SyncObjects = new SyncObject[config.ChunkCount];
-            for (int i = 0; i < config.ChunkCount; i++) config.SyncObjects[i] = new SyncObject();
+            if (config.IsThreadSafe)
+            {
+                config.SyncObjects = new SyncObject[config.ChunkCount];
+                for (int i = 0; i < config.ChunkCount; i++) config.SyncObjects[i] = new SyncObject();
+            }
         }
 
 
-        void InitializeHeader()
+        protected void InitializeHeader()
         {
             config.HeaderPointer->IsAligned = config.IsAligned;
             config.HeaderPointer->DistanceSum = 0;
@@ -172,11 +159,11 @@ namespace PersistentHashing
             config.HeaderPointer->ValueSize = config.ValueSize;
         }
 
-        void ValidateHeader()
+        protected void ValidateHeader()
         {
             if ( config.HeaderPointer->Magic != StaticFixedSizeHashTableFileHeader.MagicNumber)
             {
-                throw new FormatException($"This is not a {nameof(StaticFixedKeySizeHashTableStore<TKey>)} file");
+                throw new FormatException($"This is not a {nameof(StaticStore<TKey, TValue>)} file");
             }
             if (config.HeaderPointer->IsAligned != config.IsAligned)
             {
@@ -196,25 +183,8 @@ namespace PersistentHashing
             }
         }
 
-        private void CalculateOffsetsAndSizesDependingOnAlignement()
-        {
-            config.KeySize = sizeof(TKey);
-            config.ValueSize = sizeof(long);
-            config.DistanceSize = sizeof(short);
 
-
-            int keyAlignement = GetAlignement(config.KeySize);
-            int valueAlignement = GetAlignement(config.ValueSize);
-            int distanceAlignement = GetAlignement(config.DistanceSize);
-            int slotAlignement = Math.Max(distanceAlignement, Math.Max(keyAlignement, valueAlignement));
-
-            //config.KeyOffset = 0;
-            config.ValueOffset = config.KeyOffset + config.KeySize + GetPadding(config.KeyOffset + config.KeySize, valueAlignement);
-            config.DistanceOffset = config.ValueOffset + config.ValueSize + GetPadding(config.ValueOffset + config.ValueSize, distanceAlignement);
-            config.RecordSize = config.DistanceOffset + config.DistanceSize + GetPadding(config.DistanceOffset + config.DistanceSize, slotAlignement);
-        }
-
-        private int GetPadding(int offsetWithoutPadding, int alignement)
+        protected int GetPadding(int offsetWithoutPadding, int alignement)
         {
             if (!config.IsAligned) return 0;
             int alignementMinusOne = alignement - 1;
@@ -222,7 +192,7 @@ namespace PersistentHashing
             return (alignement - (offsetWithoutPadding & alignementMinusOne)) & alignementMinusOne;
         }
 
-        private int GetAlignement(int size)
+        protected int GetAlignement(int size)
         {
             if (!config.IsAligned) return 1;
             if (size >= 8) return 8;
@@ -240,22 +210,32 @@ namespace PersistentHashing
         public bool IsDisposed { get; private set; }
 
  
-        public void Dispose()
+        public virtual void Dispose()
         {
             if (IsDisposed) return;
             IsDisposed = true;
-            if (this.config.TableMappingSession != null) this.config.TableMappingSession.Dispose();
-            if (this.config.TableMemoryMapper != null) this.config.TableMemoryMapper.Dispose();
+            if (config.TableMemoryMapper != null) config.TableMemoryMapper.Dispose();
+            if (config.DataFile != null) config.DataFile.Dispose();
         }
 
-        public void Flush()
+        public virtual void Flush()
         {
-            this.config.TableMemoryMapper.Flush();
+            config.TableMemoryMapper.Flush();
+            if (config.DataFile != null) config.DataFile.Flush();
         }
 
-        StaticConcurrentFixedKeySizeHashTable<TKey> Open()
+        public abstract void Initialize();
+
+
+        protected void EnsureInitialized()
         {
-            return new StaticConcurrentFixedKeySizeHashTable<TKey>(config);
+            if (isInitialized) return;
+            lock (initializeSyncObject)
+            {
+                if (isInitialized) return;
+                Initialize();
+                isInitialized = true;
+            }
         }
        
     }
