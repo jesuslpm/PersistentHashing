@@ -9,12 +9,12 @@ namespace PersistentHashing
 
     public static class Factory
     {
-        //public static StaticFixedSizeHashTable<TKey, TValue> GetStaticFixedSizeHashTable<TKey, TValue>(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)  
-        //    where TKey:unmanaged 
-        //    where TValue:unmanaged
-        //{
-        //    throw new NotImplementedException();
-        //}
+        public static StaticFixedSizeStore<TKey, TValue> GetStaticFixedSizeStore<TKey, TValue>(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
+            where TKey : unmanaged
+            where TValue : unmanaged
+        {
+            return new StaticFixedSizeStore<TKey, TValue>(filePathWithoutExtension, capacity, options) ;
+        }
 
         public static object GetStaticFixedKeySizeStore<TKey>(string filePathWithoutExtension)
             where TKey : unmanaged

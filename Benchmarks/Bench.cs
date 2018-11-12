@@ -12,7 +12,7 @@ namespace Benchmarks
 {
     static class Bench
     {
-        const int n = 40_000_000;
+        const int n = 10_000_000;
 
         private static readonly int ThreadCount = Environment.ProcessorCount;
 
@@ -22,8 +22,10 @@ namespace Benchmarks
             {
                 //BenchmarkDictionarySequential, BenchmarkDictionaryRandom,
                 //BenchmarkStaticFixedSizeHashTableSequential, BenchmarkStaticFixedSizeHashTableRandom,
+                
+                BenchmarkDryStaticFixedSizeHashTableMultiThreaded,
                 BenchmarkStaticFixedSizeHashTableMultiThreaded,
-                BenchmarkConcurrentDictionaryMultiThreaded,
+                //BenchmarkConcurrentDictionaryMultiThreaded,
                 //BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
                 //BenchmarkManualResetEvent,
                 //BenchmarkVoid,
@@ -34,11 +36,11 @@ namespace Benchmarks
                 //BenchmarkSpinLatch
             };
 
-            // warm up
-            //for (int i = 0; i < benchmarFunctions.Length; i++)
-            //{
-            //    benchmarFunctions[i]().ToList();
-            //}
+            //warm up
+            for (int i = 0; i < benchmarFunctions.Length; i++)
+            {
+                benchmarFunctions[i]().ToList();
+            }
 
             // show results
             for (int i = 0; i < benchmarFunctions.Length; i++)
@@ -140,7 +142,8 @@ namespace Benchmarks
             if (File.Exists(filePath)) File.Delete(filePath);
 
             var rnd = new Random(0);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n,  key => key, null, false))
+            using (var store = Factory.GetStaticFixedSizeStore<long, long>(filePath, n, new HashTableOptions<long, long> { HashFunction = key => key } ))
+            using (var hashTable = store.OpenThreadSafe())
             {
                 yield return "StaticFixedSizeHashTable thread safe single thread random access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) =>
@@ -191,12 +194,14 @@ namespace Benchmarks
 
         static IEnumerable<string> BenchmarkStaticFixedSizeHashTableMultiThreaded()
         {
-            string filePath = "Int64Int64.HashTable";
+            string filePathWithoutExtension = "Int64Int64";
+            string filePath = filePathWithoutExtension + ".HashTable";
             if (File.Exists(filePath)) File.Delete(filePath);
             yield return $"StaticFixedSizeHashTable {ThreadCount} threads";
             var watch = Stopwatch.StartNew();
             var p = Process.GetCurrentProcess();
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
+            using (var store = Factory.GetStaticFixedSizeStore<long, long>(filePathWithoutExtension, n, new HashTableOptions<long, long> { HashFunction = key => key }))
+            using (var hashTable = store.OpenThreadSafe())
             {
                 //hashTable.WarmUp();
                 //watch.Stop();
@@ -228,7 +233,7 @@ namespace Benchmarks
                 Task.WaitAll(tasks);
                 watch.Stop();
                 yield return $"{n:0,0} HashTable.TryGetValueNonBlocking calls in {watch.Elapsed}";
-                yield return $"Peak Working Set {p.PeakWorkingSet64:0,0}; Private Memory {p.PrivateMemorySize64:0,0}; GC Total Memory ${GC.GetTotalMemory(false):0,0}";
+                yield return $"Peak Working Set {p.PeakWorkingSet64:0,0}; Private Memory {p.PrivateMemorySize64:0,0}; GC Total Memory {GC.GetTotalMemory(false):0,0}";
                 hashTable.Flush();
             }
             if (File.Exists(filePath)) File.Delete(filePath);
@@ -237,7 +242,57 @@ namespace Benchmarks
             yield return $"Memory after disposing hash table: Working Set: {p.WorkingSet64:0,0}";
         }
 
-        private static Task HashTableTryAdd(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
+        static IEnumerable<string> BenchmarkDryStaticFixedSizeHashTableMultiThreaded()
+        {
+            string filePathWithoutExtension = "Int64Int64";
+            string filePath = filePathWithoutExtension + ".HashTable";
+            if (File.Exists(filePath)) File.Delete(filePath);
+            yield return $"DryStaticFixedSizeHashTable {ThreadCount} threads";
+            var watch = Stopwatch.StartNew();
+            var p = Process.GetCurrentProcess();
+            using (var store = Factory.GetStaticFixedSizeStore<long, long>(filePathWithoutExtension, n, new HashTableOptions<long, long> { HashFunction = key => key }))
+            using (var hashTable = store.OpenDryThreadSafe())
+            {
+                //hashTable.WarmUp();
+                //watch.Stop();
+                //yield return $"Warmed up in {watch.Elapsed}";
+                //watch.Restart();
+                var tasks = new Task[ThreadCount];
+                for (int i = 0; i < ThreadCount; i++)
+                {
+                    tasks[i] = DryHashTableTryAdd(ThreadCount, hashTable, i);
+                }
+                Task.WaitAll(tasks);
+                watch.Stop();
+                yield return $"{n:0,0} HashTable.TryAdd calls in {watch.Elapsed}";
+
+                watch.Restart();
+                for (int i = 0; i < ThreadCount; i++)
+                {
+                    tasks[i] = DryHashTableTryGet(ThreadCount, hashTable, i);
+                }
+                Task.WaitAll(tasks);
+                watch.Stop();
+                yield return $"{n:0,0} HashTable.TryGetValue calls in {watch.Elapsed}";
+
+                watch.Restart();
+                for (int i = 0; i < ThreadCount; i++)
+                {
+                    tasks[i] = DryHashTableTryGetNonBlocking(ThreadCount, hashTable, i);
+                }
+                Task.WaitAll(tasks);
+                watch.Stop();
+                yield return $"{n:0,0} HashTable.TryGetValueNonBlocking calls in {watch.Elapsed}";
+                yield return $"Peak Working Set {p.PeakWorkingSet64:0,0}; Private Memory {p.PrivateMemorySize64:0,0}; GC Total Memory {GC.GetTotalMemory(false):0,0}";
+                hashTable.Flush();
+            }
+            if (File.Exists(filePath)) File.Delete(filePath);
+            //Thread.Sleep(2000);
+            p = Process.GetCurrentProcess();
+            yield return $"Memory after disposing hash table: Working Set: {p.WorkingSet64:0,0}";
+        }
+
+        private static Task HashTableTryAdd(int threadCount, StaticConcurrentFixedSizeHashTable<long, long> hashTable, int i)
         {
            return Task.Factory.StartNew(() =>
            {
@@ -253,8 +308,24 @@ namespace Benchmarks
            }, TaskCreationOptions.LongRunning);
         }
 
+        private static Task DryHashTableTryAdd(int threadCount, StaticConcurrentFixedSizeHashTable<long, long> hashTable, int i)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                var rnd = new Random((int)((long)i * (long)n / threadCount));
+                int count = n / threadCount;
+                int start = i * count;
+                int end = start + count;
+                for (int j = start; j < end; j++)
+                {
+                    var key = rnd.Next();
+                    hashTable.TryAdd(key, key);
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
 
-        private static Task HashTableTryGet(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
+
+        private static Task HashTableTryGet(int threadCount, StaticConcurrentFixedSizeHashTable<long, long> hashTable, int i)
         {
             return Task.Factory.StartNew(() =>
             {
@@ -270,7 +341,40 @@ namespace Benchmarks
             }, TaskCreationOptions.LongRunning);
         }
 
-        private static Task HashTableTryGetNonBlocking(int threadCount, StaticFixedSizeHashTable<long, long> hashTable, int i)
+
+        private static Task DryHashTableTryGet(int threadCount, StaticConcurrentFixedSizeHashTable<long, long> hashTable, int i)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                var rnd = new Random((int)((long)i * (long)n / threadCount));
+                int count = n / threadCount;
+                int start = i * count;
+                int end = start + count;
+                for (int j = start; j < end; j++)
+                {
+                    var key = rnd.Next();
+                    hashTable.TryGetValue(key, out long v);
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
+
+        private static Task HashTableTryGetNonBlocking(int threadCount, StaticConcurrentFixedSizeHashTable<long, long> hashTable, int i)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                var rnd = new Random((int)((long)i * (long)n / threadCount));
+                int count = n / threadCount;
+                int start = i * count;
+                int end = start + count;
+                for (int j = start; j < end; j++)
+                {
+                    var key = rnd.Next();
+                    hashTable.TryGetValueNonBlocking(key, out long v);
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
+
+        private static Task DryHashTableTryGetNonBlocking(int threadCount, StaticConcurrentFixedSizeHashTable<long, long> hashTable, int i)
         {
             return Task.Factory.StartNew(() =>
             {
@@ -323,7 +427,8 @@ namespace Benchmarks
             //return BenchmarkHashTable((key) => (ulong)(key), (hashTable, i) => hashTable.Add(i, i));
             string filePath = "Int64Int64.hash-table";
             if (File.Exists(filePath)) File.Delete(filePath);
-            using (var hashTable = new StaticFixedSizeHashTable<long, long>(filePath, n, key => key, null, false))
+            using (var store = Factory.GetStaticFixedSizeStore<long, long>(filePath, n, new HashTableOptions<long, long> { HashFunction = key => key }))
+            using (var hashTable = store.OpenThreadSafe())
             {
                 yield return "StaticFixedSizeHashTable thread safe single thread sequencial access";
                 yield return BenchmarkAction($"Added {n:0,0} items to HashTable", (i) => hashTable.Add(i, i));

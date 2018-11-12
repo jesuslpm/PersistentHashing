@@ -9,7 +9,7 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    public unsafe sealed class StaticFixedKeySizeHashTableStore<TKey>: IDisposable where TKey:unmanaged 
+    public unsafe sealed class StaticFixedKeySizeStore<TKey>: IDisposable where TKey:unmanaged 
     {
         // <key><value-padding><value><distance padding><distance16><record-padding>
 
@@ -34,7 +34,7 @@ namespace PersistentHashing
         public long Count => config.HeaderPointer->RecordCount;
 
 
-        public StaticFixedKeySizeHashTableStore(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> keyComparer = null,  bool isAligned = false)
+        public StaticFixedKeySizeStore(string filePath, long capacity, Func<TKey, long> hashFunction = null, IEqualityComparer<TKey> keyComparer = null,  bool isAligned = false)
         {
             config.IsAligned = isAligned;
             config.KeyOffset = 0;
@@ -176,7 +176,7 @@ namespace PersistentHashing
         {
             if ( config.HeaderPointer->Magic != StaticFixedSizeHashTableFileHeader.MagicNumber)
             {
-                throw new FormatException($"This is not a {nameof(StaticFixedKeySizeHashTableStore<TKey>)} file");
+                throw new FormatException($"This is not a {nameof(StaticFixedKeySizeStore<TKey>)} file");
             }
             if (config.HeaderPointer->IsAligned != config.IsAligned)
             {
