@@ -31,13 +31,7 @@ namespace PersistentHashing
         public byte* TablePointer;
         public byte* EndTablePointer;
 
-        public int KeyOffset;
-        public int ValueOffset;
-        public int DistanceOffset;
-        public int HashOffset;
-        public int KeySize;
-        public int ValueSize;
-        public int DistanceSize;
+
         public int RecordSize;
         public int MaxLocksPerOperation;
         public int ChunkBits;
@@ -45,7 +39,6 @@ namespace PersistentHashing
         public int SlotBits;
         public int MaxAllowedDistance;
 
-        public bool IsAligned;
         public bool IsThreadSafe;
         public bool IsNew;
     }

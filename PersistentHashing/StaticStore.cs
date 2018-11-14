@@ -43,11 +43,12 @@ namespace PersistentHashing
 
         public StaticStore(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
         {
+           
             config.HashTableFilePath = filePathWithoutExtension + ".HashTable";
             config.DataFilePath = filePathWithoutExtension + ".DataFile";
             config.IsNew = !File.Exists(config.HashTableFilePath);
-            
 
+            config.RecordSize = GetRecordSize();
             // SlotCount 1, 2, 4, and 8 are edge cases that is not worth to support. So min slot count is 16, it doesn't show "anomalies".
             // (capacity + 6) / 7 is Ceil(capacity FloatDiv 7)
             // we want a MaxLoadFactor = Capacity/SlotCount = 87.5% this is why we set SlotCount = capacity + capacity/7 => 7 * slotCount = 8 * capacity => capacity/SlotCount = 7/8 = 87.5%
@@ -60,7 +61,6 @@ namespace PersistentHashing
             if (options != null)
             {
                 config.HashFunction = options.HashFunction;
-                config.IsAligned = options.IsAligned;
                 config.KeyComparer = options.KeyComparer;
                 config.ValueComparer = options.ValueComparer;
             }
@@ -144,19 +144,18 @@ namespace PersistentHashing
             }
         }
 
+        protected abstract int GetRecordSize();
+
 
         protected void InitializeHeader()
         {
-            config.HeaderPointer->IsAligned = config.IsAligned;
             config.HeaderPointer->DistanceSum = 0;
-            config.HeaderPointer->KeySize = config.KeySize;
             config.HeaderPointer->Magic = StaticFixedSizeHashTableFileHeader.MagicNumber;
             config.HeaderPointer->MaxDistance = 0;
             config.HeaderPointer->RecordCount = 0;
             config.HeaderPointer->RecordSize = config.RecordSize;
             config.HeaderPointer->Reserved[0] = 0;
             config.HeaderPointer->SlotCount = config.SlotCount;
-            config.HeaderPointer->ValueSize = config.ValueSize;
         }
 
         protected void ValidateHeader()
@@ -165,41 +164,12 @@ namespace PersistentHashing
             {
                 throw new FormatException($"This is not a {nameof(StaticStore<TKey, TValue>)} file");
             }
-            if (config.HeaderPointer->IsAligned != config.IsAligned)
-            {
-                throw new ArgumentException("Mismatched alignement");
-            }
-            if (config.HeaderPointer->KeySize != config.KeySize)
-            {
-                throw new ArgumentException("Mismatched config.KeySize");
-            }
-            if (config.HeaderPointer->ValueSize != config.ValueSize)
-            {
-                throw new ArgumentException("Mismatched ValueSize");
-            }
             if (config.HeaderPointer->RecordSize != config.RecordSize)
             {
                 throw new ArgumentException("Mismatched SlotSize");
             }
         }
 
-
-        protected int GetPadding(int offsetWithoutPadding, int alignement)
-        {
-            if (!config.IsAligned) return 0;
-            int alignementMinusOne = alignement - 1;
-            // (alignement - offsetWithoutPadding % alignement) % alignement
-            return (alignement - (offsetWithoutPadding & alignementMinusOne)) & alignementMinusOne;
-        }
-
-        protected int GetAlignement(int size)
-        {
-            if (!config.IsAligned) return 1;
-            if (size >= 8) return 8;
-            if (size >= 4) return 4;
-            if (size >= 2) return 2;
-            return 1;
-        }
 
         public void WarmUp()
         {

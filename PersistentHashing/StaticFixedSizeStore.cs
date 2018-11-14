@@ -23,7 +23,6 @@ namespace PersistentHashing
         public override void Initialize()
         {
            
-            CalculateOffsetsAndSizesDependingOnAlignement();
             long fileSize = (long)sizeof(StaticFixedSizeHashTableFileHeader) + config.SlotCount * config.RecordSize;
             fileSize += (Constants.AllocationGranularity - (fileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
             config.TableMemoryMapper = new MemoryMapper(config.HashTableFilePath, fileSize);
@@ -42,23 +41,9 @@ namespace PersistentHashing
             config.EndTablePointer = config.TablePointer + config.RecordSize * config.SlotCount;
         }
 
-        private void CalculateOffsetsAndSizesDependingOnAlignement()
+        protected override int GetRecordSize()
         {
-            config.KeyOffset = 0;
-            config.KeySize = sizeof(TKey);
-            config.ValueSize = sizeof(long);
-            config.DistanceSize = sizeof(short);
-
-
-            int keyAlignement = GetAlignement(config.KeySize);
-            int valueAlignement = GetAlignement(config.ValueSize);
-            int distanceAlignement = GetAlignement(config.DistanceSize);
-            int slotAlignement = Math.Max(distanceAlignement, Math.Max(keyAlignement, valueAlignement));
-
-            //config.KeyOffset = 0;
-            config.ValueOffset = config.KeyOffset + config.KeySize + GetPadding(config.KeyOffset + config.KeySize, valueAlignement);
-            config.DistanceOffset = config.ValueOffset + config.ValueSize + GetPadding(config.ValueOffset + config.ValueSize, distanceAlignement);
-            config.RecordSize = config.DistanceOffset + config.DistanceSize + GetPadding(config.DistanceOffset + config.DistanceSize, slotAlignement);
+            return Unsafe.SizeOf<StaticHashTableRecord<TKey, TValue>>();
         }
 
         StaticConcurrentFixedSizeHashTable<TKey, TValue> OpenThreadSafe()
