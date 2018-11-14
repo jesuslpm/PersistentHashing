@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace PersistentHashing
 {
-    internal class SyncObject
+    public class SyncObject
     {
         public volatile bool IsWriterInProgress;
         public volatile int Version;

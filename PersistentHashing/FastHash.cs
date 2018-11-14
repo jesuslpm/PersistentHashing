@@ -41,6 +41,12 @@ namespace PersistentHashing
             return unchecked(FastHash64(buffer, length, seed));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe long FastHash64(MemorySlice slice)
+        {
+            return unchecked(FastHash64((byte*)slice.Pointer, slice.Size));
+        }
+
         public static unsafe ulong FastHash64(byte* buffer, uint length, ulong seed=0)
         {
             unchecked

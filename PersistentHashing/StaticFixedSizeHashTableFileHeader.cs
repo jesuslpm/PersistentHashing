@@ -6,7 +6,7 @@ using System.Text;
 namespace PersistentHashing
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    internal unsafe struct StaticFixedSizeHashTableFileHeader
+    public unsafe struct StaticFixedSizeHashTableFileHeader
     {
         public const long MagicNumber = -2358176814029485096L;
 

@@ -31,7 +31,7 @@ namespace PersistentHashing
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Exit(ref int locked)
         {
-            Interlocked.Exchange(ref locked, 0);
+            locked = 0;
         }
     }
 }

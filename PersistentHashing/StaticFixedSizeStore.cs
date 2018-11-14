@@ -39,6 +39,7 @@ namespace PersistentHashing
             }
             config.TablePointer = config.TableFileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
             config.EndTablePointer = config.TablePointer + config.RecordSize * config.SlotCount;
+
         }
 
         protected override int GetRecordSize()
@@ -46,8 +47,9 @@ namespace PersistentHashing
             return Unsafe.SizeOf<StaticHashTableRecord<TKey, TValue>>();
         }
 
-        StaticConcurrentFixedSizeHashTable<TKey, TValue> OpenThreadSafe()
+        public StaticConcurrentFixedSizeHashTable<TKey, TValue> OpenThreadSafe()
         {
+            config.IsThreadSafe = true;
             EnsureInitialized();
             if (!config.IsThreadSafe) throw new InvalidOperationException("This store is not thread safe");
             return new StaticConcurrentFixedSizeHashTable<TKey, TValue>(config);

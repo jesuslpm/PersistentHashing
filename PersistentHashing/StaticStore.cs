@@ -41,19 +41,34 @@ namespace PersistentHashing
         protected volatile bool isInitialized;
 
 
-        public StaticStore(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
+        public StaticStore(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options)
         {
            
             config.HashTableFilePath = filePathWithoutExtension + ".HashTable";
             config.DataFilePath = filePathWithoutExtension + ".DataFile";
             config.IsNew = !File.Exists(config.HashTableFilePath);
+            
 
-            config.RecordSize = GetRecordSize();
+
+
+            if (options != null)
+            {
+                config.HashFunction = options.HashFunction;
+                config.IsAligned = options.IsAligned;
+                config.KeyComparer = options.KeyComparer ?? EqualityComparer<TKey>.Default;
+                config.ValueComparer = options.ValueComparer ?? EqualityComparer<TValue>.Default;
+            }
+
             // SlotCount 1, 2, 4, and 8 are edge cases that is not worth to support. So min slot count is 16, it doesn't show "anomalies".
             // (capacity + 6) / 7 is Ceil(capacity FloatDiv 7)
             // we want a MaxLoadFactor = Capacity/SlotCount = 87.5% this is why we set SlotCount = capacity + capacity/7 => 7 * slotCount = 8 * capacity => capacity/SlotCount = 7/8 = 87.5%
-            config.SlotCount = Math.Max(capacity + (capacity + 6)/7, 16);
+            config.SlotCount = Math.Max(capacity + (capacity + 6) / 7, 16);
             config.SlotCount = Bits.IsPowerOfTwo(config.SlotCount) ? config.SlotCount : Bits.NextPowerOf2(config.SlotCount);
+
+        }
+
+        protected void PostInitialize()
+        {
             config.SlotBits = Bits.MostSignificantBit(config.SlotCount);
             config.Capacity = (config.SlotCount / 8) * 7; // max load factor = 7/8 = 87.5%
             config.HashMask = config.SlotCount - 1L;
@@ -61,21 +76,21 @@ namespace PersistentHashing
             if (options != null)
             {
                 config.HashFunction = options.HashFunction;
+                config.IsAligned = options.IsAligned;
                 config.KeyComparer = options.KeyComparer;
                 config.ValueComparer = options.ValueComparer;
             }
             
 
             /*
-             * We use System.Threading.Monitor To achieve synchronization
-             * The table is divided into equal sized chunks of slots.
-             * The numer of chunks is a power of two that ranges from 8 to 8192
-             * We use an array of sync objects with one sync object per chunk.
-             * The sync object associated with a chunk is locked when accesing slots in the chunk.
-             * If the record distance is greater than chunk size, more than one sync object will be locked.
-             * But we never lock more than 8 sync objects in a single operation.
-             */
-
+  * We use System.Threading.Monitor To achieve synchronization
+  * The table is divided into equal sized chunks of slots.
+  * The numer of chunks is a power of two that ranges from 8 to 8192
+  * We use an array of sync objects with one sync object per chunk.
+  * The sync object associated with a chunk is locked when accesing slots in the chunk.
+  * If the record distance is greater than chunk size, more than one sync object will be locked.
+  * But we never lock more than 8 sync objects in a single operation.
+  */
 
             /*
              According to the Birthday problem and using the Square approximation
@@ -126,22 +141,22 @@ namespace PersistentHashing
 
             // We use an array of max locks per operation booleans to keep track of locked sync objects
             // (config.MaxAllowedDistance << config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2) this weird thing is ceil(MaxAllowedDistance FloatDiv ChunkSize) + 1
-            config.MaxLocksPerOperation = Math.Max((int)((config.MaxAllowedDistance << config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2)), 2);
+            config.MaxLocksPerOperation = Math.Max((int)((config.MaxAllowedDistance >> config.ChunkBits) + ((config.MaxAllowedDistance & config.ChunkMask) == 0 ? 1 : 2)), 2);
 
             Debug.Assert(Bits.IsPowerOfTwo(config.ChunkSize));
             Debug.Assert(config.MaxLocksPerOperation > 1 && config.MaxLocksPerOperation <= 8);
-
-            // MaxAllowedDistance is covered with MaxLocksPerOperation locks
-            Debug.Assert((config.MaxLocksPerOperation - 1) * config.ChunkSize >= config.MaxAllowedDistance);
-
-            // MaxAllowedDistance is reached before deadlocking.
-            Debug.Assert(config.MaxAllowedDistance <= (config.ChunkCount - 2) * config.ChunkSize);
 
             if (config.IsThreadSafe)
             {
                 config.SyncObjects = new SyncObject[config.ChunkCount];
                 for (int i = 0; i < config.ChunkCount; i++) config.SyncObjects[i] = new SyncObject();
             }
+
+            // MaxAllowedDistance is covered with MaxLocksPerOperation locks
+            Debug.Assert((config.MaxLocksPerOperation - 1) * config.ChunkSize >= config.MaxAllowedDistance);
+
+            // MaxAllowedDistance is reached before deadlocking.
+            Debug.Assert(config.MaxAllowedDistance <= (config.ChunkCount - 2) * config.ChunkSize);
         }
 
         protected abstract int GetRecordSize();
@@ -204,6 +219,7 @@ namespace PersistentHashing
             {
                 if (isInitialized) return;
                 Initialize();
+                PostInitialize();
                 isInitialized = true;
             }
         }

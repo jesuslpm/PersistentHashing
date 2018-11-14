@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace PersistentHashing
 {
-    internal unsafe struct StaticHashTableConfig<TKey, TValue>
+    public unsafe struct StaticHashTableConfig<TKey, TValue>
     {
         public long Capacity;
         public long SlotCount;
