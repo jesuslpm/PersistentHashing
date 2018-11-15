@@ -55,8 +55,8 @@ namespace PersistentHashing
                 mappings.Add(mapping);
                 mapping.AddRef();
                 baseAddress = mapping.GetBaseAddress();
+                BaseAddressChanged?.Invoke(this, new BaseAddressChangedEventArgs(baseAddress));
             }
-            BaseAddressChanged?.Invoke(this, new BaseAddressChangedEventArgs(baseAddress));
         }
 
         private void Dispose(bool disposing)
@@ -71,7 +71,7 @@ namespace PersistentHashing
                 IsDisposed = true;
                 foreach (var mapping in mappings)
                 {
-                    mapping.Release();
+                    if (mapping.IsDisposed == false) mapping.Release();
                 }
                 mapper.RemoveSession(this);
                 mappings = null;

@@ -5,8 +5,8 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public unsafe struct StaticFixedSizeHashTableFileHeader
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct StaticHashTableFileHeader
     {
         public const long MagicNumber = -2358176814029485096L;
 
@@ -14,11 +14,7 @@ namespace PersistentHashing
         public long SlotCount;
         public long RecordCount;
         public long DistanceSum;
-        public int KeySize;
-        public int ValueSize;
         public int RecordSize;
         public volatile int MaxDistance;
-        public bool IsAligned;
-        public fixed byte Reserved[7];
     }
 }

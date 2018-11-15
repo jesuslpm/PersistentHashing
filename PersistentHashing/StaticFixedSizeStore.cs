@@ -9,50 +9,34 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    public unsafe sealed class StaticFixedSizeStore<TKey, TValue>: StaticStore<TKey, TValue>, IDisposable 
+    internal unsafe sealed class StaticFixedSizeStore<TKey, TValue>: StaticStore<TKey, TValue>, IDisposable 
         where TKey:unmanaged 
         where TValue: unmanaged
     {
 
 
-        public StaticFixedSizeStore(string filePathPathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
-            :base(filePathPathWithoutExtension, capacity, options)
+        internal StaticFixedSizeStore(string filePathPathWithoutExtension, long capacity, Func<TKey, long> hashFunction, HashTableComparers<TKey, TValue> comparers = null)
+            :base(filePathPathWithoutExtension, capacity, 
+                 new BaseHashTableOptions<TKey, TValue> { HashFunction = hashFunction, KeyComparer = comparers.KeyComparer, ValueComparer = comparers.ValueComparer })
         {
         }
 
-        public override void Initialize()
-        {
-           
-            long fileSize = (long)sizeof(StaticFixedSizeHashTableFileHeader) + config.SlotCount * config.RecordSize;
-            fileSize += (Constants.AllocationGranularity - (fileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
-            config.TableMemoryMapper = new MemoryMapper(config.HashTableFilePath, fileSize);
-            config.TableMappingSession = config.TableMemoryMapper.OpenSession();
-
-            config.TableFileBaseAddress = config.TableMappingSession.GetBaseAddress();
-            config.HeaderPointer = (StaticFixedSizeHashTableFileHeader*)config.TableFileBaseAddress;
-
-            if (config.IsNew) InitializeHeader();
-            else
-            {
-                ValidateHeader();
-                config.SlotCount = config.HeaderPointer->SlotCount;
-            }
-            config.TablePointer = config.TableFileBaseAddress + sizeof(StaticFixedSizeHashTableFileHeader);
-            config.EndTablePointer = config.TablePointer + config.RecordSize * config.SlotCount;
-
-        }
 
         protected override int GetRecordSize()
         {
             return Unsafe.SizeOf<StaticHashTableRecord<TKey, TValue>>();
         }
 
-        public StaticConcurrentFixedSizeHashTable<TKey, TValue> OpenThreadSafe()
+        public StaticConcurrentFixedSizeHashTable<TKey, TValue> GetConcurrentHashTable()
         {
             config.IsThreadSafe = true;
             EnsureInitialized();
-            if (!config.IsThreadSafe) throw new InvalidOperationException("This store is not thread safe");
-            return new StaticConcurrentFixedSizeHashTable<TKey, TValue>(config);
+            return new StaticConcurrentFixedSizeHashTable<TKey, TValue>(config, this);
+        }
+
+        protected override DataFile OpenDataFile()
+        {
+            return null;
         }
     }
 }

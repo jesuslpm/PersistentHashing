@@ -8,7 +8,7 @@ namespace PersistentHashing
 {
 
     public unsafe class StaticConcurrentFixedKeySizeHashTable<TKey>
-        : AbstractStaticConcurrentHashTable<TKey, MemorySlice, TKey, long>
+        : StaticConcurrentAbstractHashTable<TKey, MemorySlice, TKey, long>
         where TKey : unmanaged
     {
         internal MemoryMappingSession mappingSession;
@@ -32,17 +32,17 @@ namespace PersistentHashing
             return config.KeyComparer.Equals(record.KeyOrHash, key); ;
         }
 
-        protected override TKey GetKey(in StaticHashTableRecord<TKey, long> record)
+        protected internal override TKey GetKey(in StaticHashTableRecord<TKey, long> record)
         {
             return record.KeyOrHash;
         }
 
-        protected override MemorySlice GetValue(in StaticHashTableRecord<TKey, long> record)
+        protected internal override MemorySlice GetValue(in StaticHashTableRecord<TKey, long> record)
         {
             return new MemorySlice(dataPointer + record.ValueOrOffset + sizeof(int), *(int *)(dataPointer + record.ValueOrOffset));
         }
 
-        protected override StaticHashTableRecord<TKey, long> StoreItem(TKey key, MemorySlice value, long hash)
+        protected internal override StaticHashTableRecord<TKey, long> StoreItem(TKey key, MemorySlice value, long hash)
         {
             long valueOffset = config.DataFile.Allocate(value.Size + sizeof(int));
             *(int*)(dataPointer + valueOffset) = value.Size;

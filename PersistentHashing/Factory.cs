@@ -9,28 +9,24 @@ namespace PersistentHashing
 
     public static class Factory
     {
-        public static StaticFixedSizeStore<TKey, TValue> GetStaticFixedSizeStore<TKey, TValue>(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options = null)
-            where TKey : unmanaged
-            where TValue : unmanaged
+        public static StaticConcurrentFixedSizeHashTable<TKey, TValue> GetStaticConcurrentFixedSizeHashTable<TKey, TValue>(string filePathWithoutExtension, long capacity, Func<TKey, long> hashFunction,  HashTableComparers<TKey, TValue> comparers = null)
+            where TKey : unmanaged where TValue : unmanaged
         {
-            return new StaticFixedSizeStore<TKey, TValue>(filePathWithoutExtension, capacity, options) ;
+            var store = new StaticFixedSizeStore<TKey, TValue>(filePathWithoutExtension, capacity, hashFunction, comparers) ;
+            return store.GetConcurrentHashTable();
         }
 
-        public static object GetStaticFixedKeySizeStore<TKey>(string filePathWithoutExtension)
-            where TKey : unmanaged
+        public static StaticFixedKeySizeStore<TKey> GetStaticFixedKeySizeStore<TKey>(string filePathWithoutExtension, long capacity, Func<TKey, long> hashFunction, FixedKeySizeHashTableOptions<TKey> options = null) 
+            where TKey: unmanaged
         {
-            throw new NotImplementedException();
+            return new StaticFixedKeySizeStore<TKey>(filePathWithoutExtension, capacity, hashFunction, options);
         }
 
-        public static object GetStaticVariableSizeStore(string filePathWithoutExtension)
+        public static StaticVariableSizeStore GetStaticVariableSizeStore(string filePathWithoutExtension, long capacity, VariableSizeHashTableOptions options = null)
         {
-            throw new NotImplementedException();
+            return new StaticVariableSizeStore(filePathWithoutExtension, capacity, options);
         }
 
-        public static object GetStaticConcurrentFixedSizeHashTable(string filePathWithoutExtension)
-        {
-            throw new NotImplementedException();
-        }
 
         public static object GetStaticConcurrentFixedKeySizeStore(string filePathWithoutExtension)
         {

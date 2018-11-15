@@ -5,16 +5,16 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    internal class StaticConcurrentFixedSizeHashTableKeyCollection<TKey, TValue> : ICollection<TKey> where TKey : unmanaged where TValue : unmanaged
+    internal class StaticConcurrentHashTableKeyCollection<TKey, TValue, TK, TV> : ICollection<TKey> where TK : unmanaged where TV : unmanaged
     {
 
-        private readonly StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable;
+        private readonly StaticConcurrentAbstractHashTable<TKey, TValue, TK, TV> hashTable;
 
         public int Count => (int) hashTable.Count;
 
         public bool IsReadOnly => true;
 
-        public StaticConcurrentFixedSizeHashTableKeyCollection(StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable)
+        public StaticConcurrentHashTableKeyCollection(StaticConcurrentAbstractHashTable<TKey, TValue, TK, TV> hashTable)
         {
             this.hashTable = hashTable;
         }
@@ -48,7 +48,7 @@ namespace PersistentHashing
 
         public IEnumerator<TKey> GetEnumerator()
         {
-            return new StaticConcurrentFixedSizeHashTableKeyEnumerator<TKey, TValue>(hashTable);
+            return new StaticConcurrentHashTableKeyEnumerator<TKey, TValue, TK, TV>(hashTable);
         }
 
         public bool Remove(TKey item)

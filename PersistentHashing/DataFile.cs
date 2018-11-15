@@ -18,19 +18,27 @@ namespace PersistentHashing
 
         public DataFile(string filePath, long initialSize, int growthIncrement)
         {
-            bool isNew = !File.Exists(filePath);
-            memoryMapper = new MemoryMapper(filePath, initialSize);
-            mapping = MemoryMapping.Create(memoryMapper.fs, Constants.AllocationGranularity);
-            dataFileHeaderPointer = (DataFileHeader*) mapping.GetBaseAddress();
-            growthIncrement = (growthIncrement + Constants.AllocationGranularityMask) / Constants.AllocationGranularityMask;
+            try
+            {
+                bool isNew = !File.Exists(filePath);
+                memoryMapper = new MemoryMapper(filePath, initialSize);
+                mapping = MemoryMapping.Create(memoryMapper.fs, Constants.AllocationGranularity);
+                dataFileHeaderPointer = (DataFileHeader*)mapping.GetBaseAddress();
+                growthIncrement = (growthIncrement + Constants.AllocationGranularityMask) / Constants.AllocationGranularityMask;
 
-            if (isNew)
-            {
-                InitializeHeader();
+                if (isNew)
+                {
+                    InitializeHeader();
+                }
+                else
+                {
+                    ValidateHeader();
+                }
             }
-            else
+            catch
             {
-                ValidateHeader();
+                Dispose();
+                throw;
             }
         }
 
@@ -80,6 +88,11 @@ namespace PersistentHashing
             return newFreeSpaceOffset - bytesToAllocate;
         }
 
+        public void Free(long offset)
+        {
+            //TODO: implementing free space management.
+        }
+
         internal long Write(ReadOnlySpan<byte> value, byte* baseAddress)
         {
             int bytesToAllocateAndCopy = value.Length + sizeof(int);
@@ -93,31 +106,43 @@ namespace PersistentHashing
 
         public bool IsDisposed { get; private set; }
 
-        private void Dispose(bool disposing)
+        public void Dispose()
         {
             if (IsDisposed) return;
             IsDisposed = true;
-            mapping.Release();
-            mapping = null;
-            memoryMapper.Dispose();
-            memoryMapper = null;
-            if (disposing) GC.SuppressFinalize(this);
+            List<Exception> exceptions = new List<Exception>();
+            if (mapping != null)
+            {
+                try
+                {
+                    mapping.Release();
+                    mapping = null;
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            }
+            if (memoryMapper != null)
+            {
+                try
+                {
+                    memoryMapper.Dispose();
+                    memoryMapper = null;
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            }
+
+            if (exceptions.Count > 0) throw new AggregateException(exceptions);
         }
 
         public void Flush()
         {
             CheckDisposed();
             memoryMapper.Flush();
-        }
-
-        public void Dispose()
-        {
-            Dispose(true);
-        }
-
-        ~DataFile()
-        {
-            Dispose(false);
         }
     }
 }

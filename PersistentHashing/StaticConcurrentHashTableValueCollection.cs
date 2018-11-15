@@ -5,21 +5,21 @@ using System.Text;
 
 namespace PersistentHashing
 {
-    internal class StaticConcurrentFixedSizeHashTableValueCollection<TKey, TValue> : ICollection<TValue> where TKey : unmanaged where TValue : unmanaged
+    internal class StaticConcurrentHashTableValueCollection<TKey, TValue, TK, TV> : ICollection<TValue> where TK : unmanaged where TV : unmanaged
     {
 
-        private readonly StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable;
+        private readonly StaticConcurrentAbstractHashTable<TKey, TValue, TK, TV> hashTable;
 
-        public int Count => (int) hashTable.Count;
+        public int Count => (int)hashTable.Count;
 
         public bool IsReadOnly => true;
 
-        public StaticConcurrentFixedSizeHashTableValueCollection(StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable)
+        public StaticConcurrentHashTableValueCollection(StaticConcurrentAbstractHashTable<TKey, TValue, TK, TV> hashTable)
         {
             this.hashTable = hashTable;
         }
 
-        public void Add(TValue item)
+        public void Add(TValue value)
         {
             throw new NotImplementedException();
         }
@@ -29,7 +29,7 @@ namespace PersistentHashing
             throw new NotImplementedException();
         }
 
-        public bool Contains(TValue item)
+        public bool Contains(TValue value)
         {
             throw new NotImplementedException();
         }
@@ -39,7 +39,7 @@ namespace PersistentHashing
             if (array == null) throw new ArgumentNullException(nameof(array));
             if (arrayIndex < 0) throw new ArgumentOutOfRangeException(nameof(arrayIndex), "arrayIndex parameter must be greater than zero");
             if (this.Count > array.Length - arrayIndex) throw new ArgumentException("The array has not enough space to hold all items");
-            
+
             foreach (var value in this)
             {
                 array[arrayIndex++] = value;
@@ -48,15 +48,15 @@ namespace PersistentHashing
 
         public IEnumerator<TValue> GetEnumerator()
         {
-            return new StaticConcurrentFixedSizeHashTableValueEnumerator<TKey, TValue>(hashTable);
+            return new StaticConcurrentHashTableValueEnumerator<TKey, TValue, TK, TV>(hashTable);
         }
 
-        public bool Remove(TValue item)
+        public bool Remove(TValue value)
         {
             throw new NotImplementedException();
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-       
+
     }
 }

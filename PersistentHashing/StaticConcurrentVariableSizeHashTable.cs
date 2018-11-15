@@ -8,7 +8,7 @@ namespace PersistentHashing
 {
 
     public unsafe class StaticConcurrentVariableSizeHashTable
-        : AbstractStaticConcurrentHashTable<MemorySlice, MemorySlice, long, long>
+        : StaticConcurrentAbstractHashTable<MemorySlice, MemorySlice, long, long>
     {
         internal MemoryMappingSession mappingSession;
 
@@ -42,19 +42,19 @@ namespace PersistentHashing
             return false;
         }
 
-        protected override MemorySlice GetKey(in StaticHashTableRecord<long, long> record)
+        protected internal override MemorySlice GetKey(in StaticHashTableRecord<long, long> record)
         {
             return new MemorySlice(dataPointer + record.ValueOrOffset + sizeof(int), *(int*)(dataPointer + record.ValueOrOffset));
         }
 
-        protected override MemorySlice GetValue(in StaticHashTableRecord<long, long> record)
+        protected internal override MemorySlice GetValue(in StaticHashTableRecord<long, long> record)
         {
             var keySize = *(int*)(dataPointer + record.ValueOrOffset);
             var valuePointer = dataPointer + record.ValueOrOffset + sizeof(int) + keySize;
             return new MemorySlice(valuePointer + sizeof(int), *(int *)valuePointer);
         }
 
-        protected override StaticHashTableRecord<long, long> StoreItem(MemorySlice key, MemorySlice value, long hash)
+        protected internal override StaticHashTableRecord<long, long> StoreItem(MemorySlice key, MemorySlice value, long hash)
         {
             // we store key and value contiguously in the data file.
 

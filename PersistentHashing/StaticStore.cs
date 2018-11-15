@@ -40,21 +40,19 @@ namespace PersistentHashing
         private object initializeSyncObject = new object();
         protected volatile bool isInitialized;
 
+       
 
-        public StaticStore(string filePathWithoutExtension, long capacity, HashTableOptions<TKey, TValue> options)
+
+        public StaticStore(string filePathWithoutExtension, long capacity, BaseHashTableOptions<TKey, TValue> options)
         {
-           
+            config.RecordSize = GetRecordSize();
             config.HashTableFilePath = filePathWithoutExtension + ".HashTable";
             config.DataFilePath = filePathWithoutExtension + ".DataFile";
             config.IsNew = !File.Exists(config.HashTableFilePath);
-            
-
-
 
             if (options != null)
             {
                 config.HashFunction = options.HashFunction;
-                config.IsAligned = options.IsAligned;
                 config.KeyComparer = options.KeyComparer ?? EqualityComparer<TKey>.Default;
                 config.ValueComparer = options.ValueComparer ?? EqualityComparer<TValue>.Default;
             }
@@ -67,30 +65,41 @@ namespace PersistentHashing
 
         }
 
-        protected void PostInitialize()
+        protected virtual void Initialize()
         {
+            long fileSize = (long)sizeof(StaticHashTableFileHeader) + config.SlotCount * config.RecordSize;
+            fileSize += (Constants.AllocationGranularity - (fileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
+            config.TableMemoryMapper = new MemoryMapper(config.HashTableFilePath, fileSize);
+            config.TableMappingSession = config.TableMemoryMapper.OpenSession();
+
+            config.TableFileBaseAddress = config.TableMappingSession.GetBaseAddress();
+            config.HeaderPointer = (StaticHashTableFileHeader*)config.TableFileBaseAddress;
+
+            if (config.IsNew) InitializeHeader();
+            else
+            {
+                ValidateHeader();
+                config.SlotCount = config.HeaderPointer->SlotCount;
+            }
+            config.TablePointer = config.TableFileBaseAddress + sizeof(StaticHashTableFileHeader);
+            config.EndTablePointer = config.TablePointer + config.RecordSize * config.SlotCount;
+
+            config.DataFile = OpenDataFile();
+
             config.SlotBits = Bits.MostSignificantBit(config.SlotCount);
             config.Capacity = (config.SlotCount / 8) * 7; // max load factor = 7/8 = 87.5%
             config.HashMask = config.SlotCount - 1L;
 
-            if (options != null)
-            {
-                config.HashFunction = options.HashFunction;
-                config.IsAligned = options.IsAligned;
-                config.KeyComparer = options.KeyComparer;
-                config.ValueComparer = options.ValueComparer;
-            }
-            
 
             /*
-  * We use System.Threading.Monitor To achieve synchronization
-  * The table is divided into equal sized chunks of slots.
-  * The numer of chunks is a power of two that ranges from 8 to 8192
-  * We use an array of sync objects with one sync object per chunk.
-  * The sync object associated with a chunk is locked when accesing slots in the chunk.
-  * If the record distance is greater than chunk size, more than one sync object will be locked.
-  * But we never lock more than 8 sync objects in a single operation.
-  */
+             * We use System.Threading.Monitor To achieve synchronization
+             * The table is divided into equal sized chunks of slots.
+             * The numer of chunks is a power of two that ranges from 8 to 8192
+             * We use an array of sync objects with one sync object per chunk.
+             * The sync object associated with a chunk is locked when accesing slots in the chunk.
+             * If the record distance is greater than chunk size, more than one sync object will be locked.
+             * But we never lock more than 8 sync objects in a single operation.
+             */
 
             /*
              According to the Birthday problem and using the Square approximation
@@ -146,11 +155,7 @@ namespace PersistentHashing
             Debug.Assert(Bits.IsPowerOfTwo(config.ChunkSize));
             Debug.Assert(config.MaxLocksPerOperation > 1 && config.MaxLocksPerOperation <= 8);
 
-            if (config.IsThreadSafe)
-            {
-                config.SyncObjects = new SyncObject[config.ChunkCount];
-                for (int i = 0; i < config.ChunkCount; i++) config.SyncObjects[i] = new SyncObject();
-            }
+
 
             // MaxAllowedDistance is covered with MaxLocksPerOperation locks
             Debug.Assert((config.MaxLocksPerOperation - 1) * config.ChunkSize >= config.MaxAllowedDistance);
@@ -161,21 +166,22 @@ namespace PersistentHashing
 
         protected abstract int GetRecordSize();
 
+        protected abstract DataFile OpenDataFile();
+
 
         protected void InitializeHeader()
         {
             config.HeaderPointer->DistanceSum = 0;
-            config.HeaderPointer->Magic = StaticFixedSizeHashTableFileHeader.MagicNumber;
+            config.HeaderPointer->Magic = StaticHashTableFileHeader.MagicNumber;
             config.HeaderPointer->MaxDistance = 0;
             config.HeaderPointer->RecordCount = 0;
             config.HeaderPointer->RecordSize = config.RecordSize;
-            config.HeaderPointer->Reserved[0] = 0;
             config.HeaderPointer->SlotCount = config.SlotCount;
         }
 
         protected void ValidateHeader()
         {
-            if ( config.HeaderPointer->Magic != StaticFixedSizeHashTableFileHeader.MagicNumber)
+            if ( config.HeaderPointer->Magic != StaticHashTableFileHeader.MagicNumber)
             {
                 throw new FormatException($"This is not a {nameof(StaticStore<TKey, TValue>)} file");
             }
@@ -209,20 +215,38 @@ namespace PersistentHashing
             if (config.DataFile != null) config.DataFile.Flush();
         }
 
-        public abstract void Initialize();
-
-
         protected void EnsureInitialized()
         {
-            if (isInitialized) return;
+            if (isInitialized)
+            {
+                EnsureSyncObjectsForConcurrentHashTables();
+            };
             lock (initializeSyncObject)
             {
-                if (isInitialized) return;
+                if (isInitialized)
+                {
+                    EnsureSyncObjectsForConcurrentHashTables();
+                    return;
+                }
                 Initialize();
-                PostInitialize();
+                EnsureSyncObjectsForConcurrentHashTables();
                 isInitialized = true;
             }
         }
-       
+
+        private void EnsureSyncObjectsForConcurrentHashTables()
+        {
+            if (config.IsThreadSafe && config.SyncObjects == null)
+            {
+                lock (initializeSyncObject)
+                {
+                    if (config.IsThreadSafe && config.SyncObjects == null)
+                    {
+                        config.SyncObjects = new SyncObject[config.ChunkCount];
+                        for (int i = 0; i < config.ChunkCount; i++) config.SyncObjects[i] = new SyncObject();
+                    }
+                }
+            }
+        }
     }
 }

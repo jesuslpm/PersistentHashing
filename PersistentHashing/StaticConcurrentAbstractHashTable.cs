@@ -16,7 +16,7 @@ namespace PersistentHashing
     /// <typeparam name="TValue">The value type</typeparam>
     /// <typeparam name="TK">The type of table record field K</typeparam>
     /// <typeparam name="TV">The type of table record field V</typeparam>
-    public unsafe abstract class AbstractStaticConcurrentHashTable<TKey, TValue, TK, TV>: IDisposable 
+    public unsafe abstract class StaticConcurrentAbstractHashTable<TKey, TValue, TK, TV>: IDictionary<TKey, TValue>, IDisposable 
         where TK:unmanaged where TV:unmanaged
     {
 
@@ -44,7 +44,7 @@ namespace PersistentHashing
 
 
 
-        public AbstractStaticConcurrentHashTable(in StaticHashTableConfig<TKey, TValue> config)
+        public StaticConcurrentAbstractHashTable(in StaticHashTableConfig<TKey, TValue> config)
         {
             this.config = config;
         }
@@ -59,14 +59,14 @@ namespace PersistentHashing
         //}
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ref StaticHashTableRecord<TK, TV> Record(void* recordPointer)
+        internal ref StaticHashTableRecord<TK, TV> Record(void* recordPointer)
         {
             return ref Unsafe.AsRef<StaticHashTableRecord<TK, TV>>(recordPointer);
         }
 
-        protected abstract TKey GetKey(in StaticHashTableRecord<TK, TV> record);
-        protected abstract TValue GetValue(in StaticHashTableRecord<TK, TV> record);
-        protected abstract StaticHashTableRecord<TK, TV> StoreItem(TKey key, TValue value, long hash);
+        protected internal abstract TKey GetKey(in StaticHashTableRecord<TK, TV> record);
+        protected internal abstract TValue GetValue(in StaticHashTableRecord<TK, TV> record);
+        protected internal abstract StaticHashTableRecord<TK, TV> StoreItem(TKey key, TValue value, long hash);
         protected abstract bool AreKeysEqual(in StaticHashTableRecord<TK, TV> record, TKey key, long hash);
 
 
@@ -637,13 +637,13 @@ namespace PersistentHashing
         }
 
 
-        public bool IsDisposed { get; private set; }
+        public bool IsDisposed { get; protected set; }
 
-        //public ICollection<TKey> Keys => new StaticConcurrentFixedSizeHashTableKeyCollection<TKey, TValue>(this);
+        public ICollection<TKey> Keys => new StaticConcurrentHashTableKeyCollection<TKey, TValue, TK, TV>(this);
 
-        //public ICollection<TValue> Values => new StaticConcurrentFixedSizeHashTableValueCollection<TKey, TValue>(this);
+        public ICollection<TValue> Values => new StaticConcurrentHashTableValueCollection<TKey, TValue, TK, TV>(this);
 
-        //int ICollection<KeyValuePair<TKey, TValue>>.Count => (int) Count;
+        int ICollection<KeyValuePair<TKey, TValue>>.Count => (int)Count;
 
         public bool IsReadOnly => false;
 
@@ -661,14 +661,20 @@ namespace PersistentHashing
             {
                 Put(key, value);
             }
+
+            
         }
 
-        public void Dispose()
+        protected virtual void Dispose(bool disposing)
         {
             if (IsDisposed) return;
             IsDisposed = true;
-            if (this.config.TableMappingSession != null) this.config.TableMappingSession.Dispose();
-            if (this.config.TableMemoryMapper != null) this.config.TableMemoryMapper.Dispose();
+        }
+
+
+        public void Dispose()
+        {
+            Dispose(true);
         }
 
         public void Flush()
@@ -702,28 +708,28 @@ namespace PersistentHashing
             return false;
         }
 
-        //public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
-        //{
-        //    if (array == null) throw new ArgumentNullException(nameof(array));
-        //    if (arrayIndex < 0) throw new ArgumentOutOfRangeException(nameof(arrayIndex), "arrayIndex parameter must be greater than zero");
-        //    if (this.Count > array.Length - arrayIndex) throw new ArgumentException("The array has not enough space to hold all items");
-        //    foreach (var keyValue in this)
-        //    {
-        //        array[arrayIndex++] = keyValue;
-        //    }
-        //}
+        public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
+        {
+            if (array == null) throw new ArgumentNullException(nameof(array));
+            if (arrayIndex < 0) throw new ArgumentOutOfRangeException(nameof(arrayIndex), "arrayIndex parameter must be greater than zero");
+            if (this.Count > array.Length - arrayIndex) throw new ArgumentException("The array has not enough space to hold all items");
+            foreach (var keyValue in this)
+            {
+                array[arrayIndex++] = keyValue;
+            }
+        }
 
         public bool Remove(KeyValuePair<TKey, TValue> item)
         {
             return Remove(item.Key);
         }
 
-        //public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
-        //{
-        //    return new StaticConcurrentFixedSizeHashTableRecordEnumerator<TKey, TValue>(this);
-        //}
+        public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
+        {
+            return new StaticConcurrentHashTableRecordEnumerator<TKey, TValue, TK, TV>(this);
+        }
 
-        //IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         internal unsafe struct OperationContext
         {

@@ -6,22 +6,21 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    internal unsafe class StaticConcurrentFixedSizeHashTableRecordEnumerator<TKey, TValue> : IEnumerator<KeyValuePair<TKey, TValue>> where TKey:unmanaged where TValue : unmanaged
+    internal unsafe class StaticConcurrentHashTableKeyEnumerator<TKey, TValue, TK, TV> : IEnumerator<TKey> where TK:unmanaged where TV : unmanaged
     {
         private byte* recordPointer;
-        private readonly StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable;
+        private readonly StaticConcurrentAbstractHashTable<TKey, TValue, TK, TV> hashTable;
         private long slot;
-        private KeyValuePair<TKey, TValue> _current;
-        
+        private TKey _current;
 
-        public StaticConcurrentFixedSizeHashTableRecordEnumerator(StaticConcurrentFixedSizeHashTable<TKey, TValue> hashTable )
+        public StaticConcurrentHashTableKeyEnumerator(StaticConcurrentAbstractHashTable<TKey, TValue, TK, TV> hashTable)
         {
             this.hashTable = hashTable;
             recordPointer = hashTable.config.TablePointer - hashTable.config.RecordSize;
             slot = -1;
         }
 
-        public KeyValuePair<TKey, TValue> Current
+        public TKey Current
         {
             get
             {
@@ -53,11 +52,10 @@ namespace PersistentHashing
 #endif
                 try
                 {
-                    if (hashTable.GetDistance(recordPointer) > 0)
+                    ref var record = ref hashTable.Record(recordPointer);
+                    if (record.Distance > 0)
                     {
-                        _current = new KeyValuePair<TKey, TValue>(
-                            StaticConcurrentFixedSizeHashTable<TKey, TValue>.GetKey(hashTable.GetKeyPointer(recordPointer)),
-                            StaticConcurrentFixedSizeHashTable<TKey, TValue>.GetValue(hashTable.GetValuePointer(recordPointer)));
+                        _current = hashTable.GetKey(record);
                         return true;
                     }
                 }
@@ -76,8 +74,7 @@ namespace PersistentHashing
 
         public void Reset()
         {
-            recordPointer = hashTable.config.TablePointer - hashTable.config.RecordSize;
-            slot = -1;
+            recordPointer = hashTable.config.TablePointer;
         }
     }
 }

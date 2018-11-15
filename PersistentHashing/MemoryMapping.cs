@@ -4,26 +4,32 @@ using System.ComponentModel;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading;
 
 namespace PersistentHashing
 {
     internal unsafe class MemoryMapping
     {
-
-
         private int refCount;
         private List<MemoryMappedArea> areas = new List<MemoryMappedArea>();
         private FileStream fileStream;
-        private byte* baseAddress;
+        private volatile byte* baseAddress;
+
+        private object syncObject = new object();
 
 
-        private unsafe class MemoryMappedArea
+        private unsafe struct MemoryMappedArea
         {
             public MemoryMappedFile Mmf;
             public byte* Address;
             public long Size;
+
+            public MemoryMappedArea(MemoryMappedFile mmf, byte* address, long size)
+            {
+                this.Mmf = mmf;
+                this.Address = address;
+                this.Size = size;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -40,17 +46,13 @@ namespace PersistentHashing
                 0, 0, new UIntPtr((ulong)bytesToMap), null);
             if (address == null) throw new Win32Exception();
 
-            var area = new MemoryMappedArea
+            var mapping = new MemoryMapping()
             {
-                Address = address,
-                Mmf = mmf,
-                Size = fs.Length
+                refCount = 1,
+                fileStream = fs,
+                baseAddress = address
             };
-            var mapping = new MemoryMapping();
-            mapping.refCount = 1;
-            mapping.fileStream = fs;
-            mapping.baseAddress = address;
-            mapping.areas.Add(area);
+            mapping.areas.Add(new MemoryMappedArea(mmf, address, fs.Length));
             return mapping;
         }
 
@@ -99,30 +101,97 @@ namespace PersistentHashing
 
         internal void Release()
         {
-            if (Interlocked.Decrement(ref refCount) == 0)
+            lock (syncObject)
             {
-                foreach (var a in areas)
-                {
-                    Win32FileMapping.UnmapViewOfFile(a.Address);
-                    a.Mmf.Dispose();
-                }
+                CheckDisposed();
+                refCount--;
+                if (refCount == 0) Dispose(true, false);
             }
         }
 
+        private void Dispose(bool disposing, bool takeLock = true)
+        {
+            bool lockTaken = false;
+            if (takeLock) Monitor.Enter(syncObject, ref lockTaken);
+            try
+            {
+                if (IsDisposed) return;
+                IsDisposed = true;
+                var exceptions = new List<Exception>();
+                foreach (var a in areas)
+                {
+                    try
+                    {
+                        if (Win32FileMapping.UnmapViewOfFile(a.Address) == false)
+                        {
+                            throw new Win32Exception();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        exceptions.Add(ex);
+                    }
+                    if (disposing)
+                    {
+                        try
+                        {
+                            a.Mmf.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            exceptions.Add(ex);
+                        }
+                    }
+                }
+                if (disposing && exceptions.Count > 0) throw new AggregateException(exceptions);
+            }
+            finally
+            {
+                if (lockTaken) Monitor.Exit(syncObject);
+            }
+            if (disposing) GC.SuppressFinalize(this);
+        }
+
+        public void Dispose()
+        {
+            Dispose(true, true);
+        }
+
+        private void CheckDisposed()
+        {
+            if (IsDisposed) throw new ObjectDisposedException(nameof(MemoryMapping));
+        }
+
+        public bool IsDisposed { get; private set; }
+
+
         internal void AddRef()
         {
-            Interlocked.Increment(ref refCount);
+            lock (syncObject)
+            {
+                CheckDisposed();
+                refCount++;
+            }
         }
 
         internal void Flush()
         {
-            foreach (var area in areas)
+            lock (syncObject)
             {
-                if (!Win32FileMapping.FlushViewOfFile(area.Address, new IntPtr(area.Size)))
+                CheckDisposed();
+                foreach (var area in areas)
                 {
-                    throw new Win32Exception();
+                    if (!Win32FileMapping.FlushViewOfFile(area.Address, new IntPtr(area.Size)))
+                    {
+                        throw new Win32Exception();
+                    }
                 }
             }
+        }
+
+        ~MemoryMapping()
+        {
+            Dispose(false, false);
         }
     }
 }

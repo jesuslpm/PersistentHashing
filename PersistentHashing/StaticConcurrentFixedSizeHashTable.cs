@@ -7,13 +7,16 @@ using System.Threading.Tasks;
 namespace PersistentHashing
 {
     public class StaticConcurrentFixedSizeHashTable<TKey, TValue>
-        : AbstractStaticConcurrentHashTable<TKey, TValue, TKey, TValue>
+        : StaticConcurrentAbstractHashTable<TKey, TValue, TKey, TValue>
         where TKey : unmanaged where TValue : unmanaged
     {
 
-        public StaticConcurrentFixedSizeHashTable(in StaticHashTableConfig<TKey, TValue> config)
+        private readonly StaticFixedSizeStore<TKey, TValue> store;
+
+        internal StaticConcurrentFixedSizeHashTable(in StaticHashTableConfig<TKey, TValue> config, StaticFixedSizeStore<TKey, TValue> store)
             :base(config)
         {
+            this.store = store;
         }
 
         protected override bool AreKeysEqual(in StaticHashTableRecord<TKey, TValue> record, TKey key, long hash)
@@ -21,19 +24,29 @@ namespace PersistentHashing
             return config.KeyComparer.Equals(record.KeyOrHash, key);
         }
 
-        protected override TKey GetKey(in StaticHashTableRecord<TKey, TValue> record)
+        protected internal override TKey GetKey(in StaticHashTableRecord<TKey, TValue> record)
         {
             return record.KeyOrHash;
         }
 
-        protected override TValue GetValue(in StaticHashTableRecord<TKey, TValue> record)
+        protected internal override TValue GetValue(in StaticHashTableRecord<TKey, TValue> record)
         {
             return record.ValueOrOffset;
         }
 
-        protected override StaticHashTableRecord<TKey, TValue> StoreItem(TKey key, TValue value, long hash)
+        protected internal override StaticHashTableRecord<TKey, TValue> StoreItem(TKey key, TValue value, long hash)
         {
             return new StaticHashTableRecord<TKey, TValue>(key, value);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (IsDisposed) return;
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                if (store != null) store.Dispose();
+            }
         }
     }
 }

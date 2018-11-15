@@ -22,12 +22,10 @@ namespace PersistentHashing
         public IEqualityComparer<TValue> ValueComparer;
         public MemoryMapper TableMemoryMapper;
         public MemoryMappingSession TableMappingSession;
-        public MemoryMapper DataMemoryMapper;
         public DataFile DataFile;
         public byte* TableFileBaseAddress;
-        //public ThreadSafety ThreadSafety;
 
-        public StaticFixedSizeHashTableFileHeader* HeaderPointer;
+        public StaticHashTableFileHeader* HeaderPointer;
         public byte* TablePointer;
         public byte* EndTablePointer;
 
