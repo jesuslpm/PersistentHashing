@@ -33,7 +33,11 @@ namespace PersistentHashing
 
         internal StaticFixedSizeStore(string filePathPathWithoutExtension, long capacity, Func<TKey, long> hashFunction, HashTableComparers<TKey, TValue> comparers = null)
             :base(filePathPathWithoutExtension, capacity, 
-                 new BaseHashTableOptions<TKey, TValue> { HashFunction = hashFunction, KeyComparer = comparers.KeyComparer, ValueComparer = comparers.ValueComparer })
+                 new BaseHashTableOptions<TKey, TValue> {
+                     HashFunction = hashFunction,
+                     KeyComparer = comparers?.KeyComparer ?? EqualityComparer<TKey>.Default,
+                     ValueComparer = comparers?.ValueComparer ?? EqualityComparer<TValue>.Default
+                 })
         {
         }
 

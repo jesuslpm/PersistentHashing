@@ -221,6 +221,7 @@ namespace PersistentHashing
         {
             if (IsDisposed) return;
             IsDisposed = true;
+            if (config.TableMappingSession != null) config.TableMappingSession.Dispose();
             if (config.TableMemoryMapper != null) config.TableMemoryMapper.Dispose();
             if (config.DataFile != null) config.DataFile.Dispose();
         }

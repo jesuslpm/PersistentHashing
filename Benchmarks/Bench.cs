@@ -12,7 +12,7 @@ namespace Benchmarks
 {
     static class Bench
     {
-        const int n = 10_000_000;
+        const int n = 20_000_000;
 
         private static readonly int ThreadCount = Environment.ProcessorCount;
 
@@ -24,7 +24,7 @@ namespace Benchmarks
                 //BenchmarkStaticFixedSizeHashTableSequential, BenchmarkStaticFixedSizeHashTableRandom,
                 
                 BenchmarkStaticFixedSizeHashTableMultiThreaded,
-                //BenchmarkConcurrentDictionaryMultiThreaded,
+                BenchmarkConcurrentDictionaryMultiThreaded,
                 //BenchmarkReaderWriterLockSlim, BenchmarkReaderWriterLock, BenchmarkSpinLock,
                 //BenchmarkManualResetEvent,
                 //BenchmarkVoid,
@@ -36,10 +36,10 @@ namespace Benchmarks
             };
 
             //warm up
-            for (int i = 0; i < benchmarFunctions.Length; i++)
-            {
-                benchmarFunctions[i]().ToList();
-            }
+            //for (int i = 0; i < benchmarFunctions.Length; i++)
+            //{
+            //    benchmarFunctions[i]().ToList();
+            //}
 
             // show results
             for (int i = 0; i < benchmarFunctions.Length; i++)
@@ -159,6 +159,9 @@ namespace Benchmarks
             Task.WaitAll(tasks);
             watch.Stop();
             yield return $"{n:0,0} ConcurrentDictionary.TryGetValue calls in {watch.Elapsed}";
+            var p = Process.GetCurrentProcess();
+            yield return $"Peak Working Set {p.PeakWorkingSet64:0,0}; Private Memory {p.PrivateMemorySize64:0,0}; GC Total Memory {GC.GetTotalMemory(false):0,0}";
+
         }
 
         static IEnumerable<string> BenchmarkStaticFixedSizeHashTableMultiThreaded()
@@ -168,7 +171,7 @@ namespace Benchmarks
             if (File.Exists(filePath)) File.Delete(filePath);
             yield return $"StaticFixedSizeHashTable {ThreadCount} threads";
             var watch = Stopwatch.StartNew();
-            var p = Process.GetCurrentProcess();
+            Process p = null;
             using (var hashTable = Factory.GetStaticConcurrentFixedSizeHashTable<long, long>(filePathWithoutExtension, n, key => key))
             {
                 //hashTable.WarmUp();
@@ -201,6 +204,7 @@ namespace Benchmarks
                 Task.WaitAll(tasks);
                 watch.Stop();
                 yield return $"{n:0,0} HashTable.TryGetValueNonBlocking calls in {watch.Elapsed}";
+                p = Process.GetCurrentProcess();
                 yield return $"Peak Working Set {p.PeakWorkingSet64:0,0}; Private Memory {p.PrivateMemorySize64:0,0}; GC Total Memory {GC.GetTotalMemory(false):0,0}";
                 hashTable.Flush();
             }

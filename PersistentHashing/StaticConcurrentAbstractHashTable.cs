@@ -68,11 +68,6 @@ namespace PersistentHashing
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         byte* GetRecordPointer(long slot) => config.TablePointer + config.RecordSize * slot;
 
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
-        //ref StaticHashTableRecord<TK, TV> Record(long slot)
-        //{
-        //    return ref Unsafe.AsRef<StaticHashTableRecord<TK, TV>>(GetRecordPointer(slot));
-        //}
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ref StaticHashTableRecord<TK, TV> Record(void* recordPointer)
