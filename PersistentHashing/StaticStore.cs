@@ -83,9 +83,9 @@ namespace PersistentHashing
 
         protected virtual void Initialize()
         {
-            long fileSize = (long)sizeof(StaticHashTableFileHeader) + config.SlotCount * config.RecordSize;
-            fileSize += (Constants.AllocationGranularity - (fileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
-            config.TableMemoryMapper = new MemoryMapper(config.HashTableFilePath, fileSize);
+            long initialFileSize = (long)sizeof(StaticHashTableFileHeader) + config.SlotCount * config.RecordSize;
+            initialFileSize += (Constants.AllocationGranularity - (initialFileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
+            config.TableMemoryMapper = new MemoryMapper(config.HashTableFilePath, initialFileSize);
             config.TableMappingSession = config.TableMemoryMapper.OpenSession();
 
             config.TableFileBaseAddress = config.TableMappingSession.GetBaseAddress();
@@ -232,7 +232,7 @@ namespace PersistentHashing
             if (config.DataFile != null) config.DataFile.Flush();
         }
 
-        protected void EnsureInitialized()
+        public void EnsureInitialized()
         {
             if (isInitialized)
             {

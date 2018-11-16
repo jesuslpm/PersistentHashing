@@ -56,7 +56,8 @@ namespace PersistentHashing
 
         public bool MoveNext()
         {
-            while (recordPointer < hashTable.config.EndTablePointer)
+            var end = hashTable.config.SlotCount - 1;
+            while (slot < end)
             {
                 recordPointer += hashTable.config.RecordSize;
                 slot++;
