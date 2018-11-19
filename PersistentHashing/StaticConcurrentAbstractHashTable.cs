@@ -213,7 +213,7 @@ namespace PersistentHashing
         }
         static readonly Func<TKey, Func<TKey, TValue>, TValue> NestedValueFactoryFunction = NestedValueFactory;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+       
         public bool TryAdd(TKey key, TValue value)
         {
             // Trade-off: Performance vs DRY. The WET a more performant version won this time.
@@ -289,6 +289,7 @@ namespace PersistentHashing
                 }
                 byte* currentRecordPointer = emptyRecordPointer;
                 ref var emptyRecord = ref Record(emptyRecordPointer);
+                value = GetValue(emptyRecord);
 #if DEBUG
                 Interlocked.Add(ref config.HeaderPointer->DistanceSum, 1 - emptyRecord.Distance);
 #endif
@@ -311,8 +312,7 @@ namespace PersistentHashing
                     ref var currentRecord = ref Record(currentRecordPointer);
                     if (currentRecord.Distance <= 1) // empty record or zero distance
                     { 
-                        emptyRecord.Distance = 0;
-                        value = GetValue(currentRecord);
+                        emptyRecord.Distance = 0; //mark record as empty
                         Interlocked.Decrement(ref config.HeaderPointer->RecordCount);
                         return true;
                     }
@@ -500,7 +500,14 @@ namespace PersistentHashing
 
         private void ReachedMaxAllowedDistance()
         {
-            throw new InvalidOperationException($"Reached MaxAllowedDistance {config.MaxAllowedDistance}");
+            if (Count > Capacity)
+            {
+                throw new InvalidOperationException($"Capacity exceeded");
+            }
+            else
+            {
+                throw new InvalidOperationException($"Reached MaxAllowedDistance {config.MaxAllowedDistance}. This can be caused by a poor hashing function or by a collision attack");
+            }
         }
 
         public void Delete(TKey key)

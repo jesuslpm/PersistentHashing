@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -60,6 +61,21 @@ namespace PersistentHashing
         public static explicit operator Span<byte>(MemorySlice slice)
         {
             return slice.ToSpan();
+        }
+
+        public bool SequenceEquals<TItem>(TItem[] buffer) where TItem: unmanaged
+        {
+            return this.ToReadOnlySpan().SequenceEqual(MemoryMarshal.Cast<TItem, byte>(buffer.AsSpan()));
+        }
+
+        public bool SequenceEquals(MemorySlice other)
+        {
+            return this.ToReadOnlySpan().SequenceEqual(other.ToReadOnlySpan());
+        }
+
+        public bool SequenceEquals<TItem>(ReadOnlySpan<TItem> span) where TItem: unmanaged
+        {
+            return this.ToReadOnlySpan().SequenceEqual(MemoryMarshal.Cast<TItem, byte>(span));
         }
 
         public static readonly MemorySliceEqualityComparer EqualityComparer = new MemorySliceEqualityComparer();

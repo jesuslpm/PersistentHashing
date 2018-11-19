@@ -34,7 +34,12 @@ namespace PersistentHashing
         public StaticFixedKeySizeStore(string filePathPathWithoutExtension, long capacity, Func<TKey, long> hashFunction,
             FixedKeySizeHashTableOptions<TKey> options)
             : base(filePathPathWithoutExtension, capacity, 
-                  new BaseHashTableOptions<TKey, MemorySlice> { HashFunction = hashFunction, KeyComparer = options.KeyComparer, ValueComparer = MemorySlice.EqualityComparer })
+                  new BaseHashTableOptions<TKey, MemorySlice>
+                  {
+                      HashFunction = hashFunction,
+                      KeyComparer = options?.KeyComparer ?? EqualityComparer<TKey>.Default,
+                      ValueComparer = MemorySlice.EqualityComparer
+                  })
         {
             initialDataFileSize = options?.InitialDataFileSize ?? 8 * 1024 * 1024;
             dataFileSizeGrowthIncrement = options?.DataFileSizeGrowthIncrement ?? 4 * 1024 * 1024;
@@ -63,5 +68,6 @@ namespace PersistentHashing
         {
             return new DataFile(config.DataFilePath, initialDataFileSize, dataFileSizeGrowthIncrement);
         }
+
     }
 }

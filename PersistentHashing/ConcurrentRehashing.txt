@@ -1,0 +1,170 @@
+﻿Bucket:
+	RehasingLevel byte
+	SizeLevel byte
+	LinkedList
+	
+
+
+========================================================================
+Se dice que un bucket B de nivel L, tiene un RehashingLevel RL
+Si y sólo si el bucket B se ha dividido sobre sus hijos de niveles L+1, L+2, ... RL
+========================================================================
+
+Por ejemplo:
+ el bucket 0 que es de nivel 1 y tiene un RehashingLevel = 2
+ Eso quiere decir que se ha dividido sobre su hijo de nivel 2 que es 2
+
+ El bucket 0 que tiene un RehashingLevel = 3
+ Eso quiere decir que se ha dividido sobre su hijo de nivel 2 y su hijo de nivel 3
+ que son 2 y 4
+
+Propiedad: 
+bucket.Parent.RehasingLevel >= bucket.RehasingLevel
+El RL del padre siempre es mayor o igual al del hijo
+
+Esta propiedad es consecuencia de como rehasheamos la tabla.
+Cada vez que accedemos a un bucket buscamos todos los ancestros
+cuyo RL < CL (CurrentLevel) y los dividimos sobre sus hijos de manera
+que RL=CL para todos los ancestros.
+
+
+Cuando accedo a un bucket sea para leer o escribir construyo
+una lista de sus ancestros que tengan un RL < CurrentLevel
+
+
+IEnumerable<Bucket> GetAncestorsToRehashInBuckerOrder(Bucket bucket)
+{
+	Bucket current = null;
+	Bucket parent = bucket;
+	
+	while (parent.RehasingLevel < currentLevel)
+	{
+	    yield return parent;
+		current = parent;
+		parent = current.Parent;
+	}
+	
+}
+
+Por ejemplo supongamos que accedo al bucket 20 que es nuevo
+y tiene por tanto RL = 0;
+
+sus ancestros junto con sus hijos son:
+
+(B=20, L=5, RL=0), H={}
+(B=4,  L=3, RL=0), H=(B=12,L=4),(B=20,L=5)
+(B=0,  L=1, RL=3), H={(B=2,L=2),(B=4, L=3),(B=8,L=4), B(16,5)}
+
+                       
+               (B=0,L=1,RL=2)
+                     | 
+(B=2,L=2,RL=2),(B=4,L=3,RL=0),(B=8,L=4,RL=0), B(B=16,L=5,RL=0)}			   
+			         |
+(B=12,L=4,RL=0),(B=20,L=5, RL=0)
+
+Los buckets afectados son los ancestros y sus hijos cuyo nivel sea mayor que su RL
+
+Definimos el concepto Target Rehashing Level TRL como el RL que tendrá cada bucket
+afectado después de la operación de reshashing.
+
+El TRL de los ancestros será CurrentLevel
+El TRL de los hijos que no son ancestros será el Level del hijo,
+
+un Hash va a un bucket B si: Hash & (2^TRL - 1) == B
+
+Obtener los hijos de un bucket:
+
+Tenemos un bucket de nivel L=6 su representación en binario es 0000001xxxxx con L-1 x's
+El hijo de nivel L+1 = 7 es 0000011xxxxx MSB=6
+El hijo de nivel L+2 = 8 es 0000101xxxxx MSB=7
+El hijo de nivel L+3 = 9 es 0001001xxxxx MSB=8
+
+
+Un bucket B de nivel L hijo del Bucket P tiene la forma:
+B = P + 2^(L-1)
+B = P | (1 << (L-1))
+
+Por ejemplo un bucket de nivel 6 como 32, 100000b
+su primer hijo es de nivel 7
+B = 32 + 2^(7-1) = 32 + 64 = 96 = 1100000b
+
+Si tenemos un Hash H ¿A qué hijo de P le corresponde?
+P tiene hijos desde L+1 hasta CurrentLevel
+El nivel del bucket hijo es MSB(H & CM) + 1
+Entonces el bucket es:
+B = P + 2^(MSB(H & CM))
+B = P | (1 << MSB(H & CM))
+
+Con P=0, si H=0
+B = 0 + 2^(0) = 1; lo cual es incorrecto. 
+
+Tenemos la siguiente función para obtener el bucket que corresponde
+al hash H de entre los hijos de B y el mismo B.
+M es la máscara que corresponde al nivel actual
+M = 2^L-1 = (1 << L) -1
+GetMappingBucket(B, H, M)
+{
+	if (H=0) return 0;
+	return B | (1 << MSB(H & M));
+}
+
+Rehash(ancestorsEnumerable)
+{
+	Bucket[] ancestors = ancestors.OrderBy(bucket => bucket.Index).ToArray();
+	for(i=0; i < ancestors.Lenght; i++)
+	{
+		RehashBucket(ancestors, i);
+	}
+}
+
+RehashBucket(ancestors, i)
+{
+	bucket = ancestors[i];
+	foreach (item in bucket.Items)
+	{
+		mappedBucket = 	GetMappingBucket(bucket, item.Hash, Mask)
+		if (mappedBucket != bucket)
+		{
+			if (ancestors[i + 1] == mappedBucket) MoveItemRecursively(item, bucket, mappedBucket, i + 1, ancestors)
+			else MoveItem(item, bucket, mappedBucket)
+		}
+	}
+}
+
+MoveItemRecursively(item, originalBucket, mappedBucket, i, ancestors)
+{
+	mappedChildBucket = GetMappingBucket(mappedBucket, item.Hash, Mask);
+	if (ancestors[i+1] == mappedChildBucket) MoveItemRecursively(item, originalBucket, mappedChildBucket, i+1, ancestors)
+	MoveItem(item, originalBucket, mappedChildBucket);
+}
+
+MoveItem(item, originalBucket, targetBucket)
+{
+
+}
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+	 
+
+
+
+
+
+
+
+
+
+
+
+

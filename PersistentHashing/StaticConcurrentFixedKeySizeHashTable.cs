@@ -33,6 +33,7 @@ namespace PersistentHashing
         {
             mappingSession = config.DataFile.OpenSession();
             mappingSession.BaseAddressChanged += MappingSession_BaseAddressChanged;
+            dataPointer = mappingSession.GetBaseAddress();
         }
 
         private void MappingSession_BaseAddressChanged(object sender, MemoryMappingSession.BaseAddressChangedEventArgs e)
@@ -63,5 +64,57 @@ namespace PersistentHashing
             value.ToReadOnlySpan().CopyTo(destinationSpan);
             return new StaticHashTableRecord<TKey, long>(key, valueOffset);
         }
+
+        public bool TryAdd(TKey key, byte[] value)
+        {
+            fixed (byte* pointer = value)
+            {
+                return TryAdd(key, new MemorySlice(pointer, value.Length));
+            }
+        }
+
+
+        public bool TryAdd<TItem>(TKey key, TItem[] value) where TItem: unmanaged
+        {
+            fixed (TItem* pointer = value)
+            {
+                return TryAdd(key, new MemorySlice(pointer, value.Length * sizeof(TItem)));
+            }
+        }
+
+        public bool TryAdd<TItem>(TKey key, ReadOnlySpan<TItem> value) where TItem : unmanaged
+        {
+            fixed (TItem* pointer = value)
+            {
+                return TryAdd(key, new MemorySlice(pointer, value.Length * sizeof(TItem)));
+            }
+        }
+
+        public void Add<TItem>(TKey key, TItem[] value) where TItem: unmanaged
+        {
+            fixed (TItem* pointer = value)
+            {
+                Add(key, new MemorySlice(pointer, value.Length * sizeof(TItem)));
+            }
+        }
+
+        public void Add<TItem>(TKey key, ReadOnlySpan<TItem> value) where TItem : unmanaged
+        {
+            fixed (TItem* pointer = value)
+            {
+                Add(key, new MemorySlice(pointer, value.Length * sizeof(TItem)));
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (IsDisposed) return;
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                if (mappingSession != null) mappingSession.Dispose();
+            }
+        }
+
     }
 }
