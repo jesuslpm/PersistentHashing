@@ -26,7 +26,7 @@ namespace PersistentHashing.Tests
             return dic;
         }
 
-        private StaticConcurrentFixedSizeHashTable<long, long> hashTable;
+        //private StaticConcurrentFixedSizeHashTable<long, long> hashTable;
 
         private StaticConcurrentFixedSizeHashTable<long, long> CreateHashTable(long capacity, Func<long, long> hashFunction = null)
         {
@@ -104,6 +104,46 @@ namespace PersistentHashing.Tests
                     dic.Remove(k);
                 }
                 Assert.Empty(dic);
+
+                hashTable.Dispose();
+                File.Delete(hashTable.config.HashTableFilePath);
+            }
+        }
+
+        [Fact]
+        public void CanEnumerateTheValuesYourWrite()
+        {
+            var dic = CreateRandomDictionary(56);
+            using (var hashTable = CreateHashTable(56))
+            {
+                long count = 0;
+                var valuesDic = new Dictionary<long, int>();
+                foreach (var kv in dic)
+                {
+                    hashTable.Add(kv);
+                    count++;
+                    Assert.Equal(count, hashTable.Count);
+                    Assert.Equal(kv.Value, hashTable[kv.Key]);
+
+                    if (valuesDic.TryGetValue(kv.Value, out int valueCount))
+                    {
+                        valuesDic[kv.Value]++;
+                    }
+                    else
+                    {
+                        valuesDic.Add(kv.Value, 1);
+                    }
+                }
+
+                foreach (var v in hashTable.Values)
+                {
+                    Assert.True(valuesDic.ContainsKey(v));
+                    valuesDic[v]--;
+                }
+                foreach (var v in valuesDic.Values)
+                {
+                    Assert.Equal(0, v);
+                }
 
                 hashTable.Dispose();
                 File.Delete(hashTable.config.HashTableFilePath);
