@@ -17,11 +17,7 @@ namespace PersistentHashing.Tests
             var rnd = new Random(0);
             while (dic.Count < n)
             {
-                dic.TryAdd(rnd.Next(), 0);
-            }
-            foreach (var key in dic.Keys.ToList())
-            {
-                dic[key] = rnd.Next();
+                dic.TryAdd(rnd.Next(), rnd.Next());
             }
             return dic;
         }
@@ -148,6 +144,24 @@ namespace PersistentHashing.Tests
                 hashTable.Dispose();
                 File.Delete(hashTable.config.HashTableFilePath);
             }
+        }
+
+        [Fact]
+        public void ExcedingCapatityShouldThrow()
+        {
+            StaticConcurrentFixedSizeHashTable<long, long> hashTable;
+            var dic = CreateRandomDictionary(100);
+            using (hashTable = CreateHashTable(56))
+            {
+               Assert.Throws<InvalidOperationException>(() =>
+               {
+                   foreach (var kv in dic)
+                   {
+                       hashTable.Add(kv);
+                   }
+               });
+            }
+            File.Delete(hashTable.config.HashTableFilePath);
         }
     }
 }
