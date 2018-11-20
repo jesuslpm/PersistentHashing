@@ -62,8 +62,8 @@ namespace PersistentHashing
         protected internal override StaticHashTableRecord<TKey, long> StoreItem(TKey key, TValue value, long hash)
         {
             var target = new SerializationTarget(config.DataFile, dataPointer);
-            valueSerializer.Serialize(value, target);
-            if (target.dataOffset == 0) throw new InvalidOperationException("SerializationTarget.GetTargetSlice must be called");
+            valueSerializer.Serialize(value, ref target);
+            //if (target.dataOffset == 0) throw new InvalidOperationException("SerializationTarget.GetTargetSlice must be called");
             return new StaticHashTableRecord<TKey, long>(key, target.dataOffset);
         }
 

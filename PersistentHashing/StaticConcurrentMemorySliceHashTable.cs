@@ -23,18 +23,19 @@ using System.Threading.Tasks;
 namespace PersistentHashing
 {
 
-    public unsafe class StaticConcurrentVariableSizeHashTable
+    public unsafe class StaticConcurrentHashTable
         : StaticConcurrentAbstractHashTable<MemorySlice, MemorySlice, long, long>
     {
         internal MemoryMappingSession mappingSession;
 
         internal byte* dataPointer;
 
-        public StaticConcurrentVariableSizeHashTable(in StaticHashTableConfig<MemorySlice, MemorySlice> config)
+        public StaticConcurrentHashTable(in StaticHashTableConfig<MemorySlice, MemorySlice> config)
             :base(config)
         {
             mappingSession = config.DataFile.OpenSession();
             mappingSession.BaseAddressChanged += MappingSession_BaseAddressChanged;
+            dataPointer = mappingSession.GetBaseAddress();
             if (this.config.KeyComparer == null) this.config.KeyComparer = MemorySlice.EqualityComparer;
             if (this.config.HashFunction == null) this.config.HashFunction = Hashing.FastHash64;
         }
@@ -86,6 +87,63 @@ namespace PersistentHashing
             value.ToReadOnlySpan().CopyTo(destinationValueSpan);
 
             return new StaticHashTableRecord<long, long>(hash, keyValueOffset);
+        }
+
+        public bool TryAdd<TKeyItem, TValueItem>(TKeyItem[] key, TValueItem[] value) where TKeyItem: unmanaged where TValueItem: unmanaged
+        {
+            fixed (void* keyPointer = key)
+            fixed (void* valuePointer = value)
+            {
+                return TryAdd(new MemorySlice(keyPointer, key.Length * sizeof(TKeyItem)), new MemorySlice(valuePointer, value.Length * sizeof(TValueItem)));
+            }
+        }
+
+        public void Add<TKeyItem, TValueItem>(TKeyItem[] key, TValueItem[] value) where TKeyItem : unmanaged where TValueItem : unmanaged
+        {
+            fixed (void* keyPointer = key)
+            fixed (void* valuePointer = value)
+            {
+                Add(new MemorySlice(keyPointer, key.Length * sizeof(TKeyItem)), new MemorySlice(valuePointer, value.Length * sizeof(TValueItem)));
+            }
+        }
+
+        public MemorySlice Get<TKeyItem>(TKeyItem[] key) where TKeyItem: unmanaged
+        {
+            fixed (void* keyPointer = key)
+            {
+                return this[new MemorySlice(keyPointer, key.Length * sizeof(TKeyItem))];
+            }
+        }
+
+        public bool ContainsKey<TKeyItem>(TKeyItem[] key) where TKeyItem: unmanaged
+        {
+            fixed (void* keyPointer = key)
+            {
+                return ContainsKey(new MemorySlice(keyPointer, key.Length * sizeof(TKeyItem)));
+            }
+        }
+
+        public bool Remove<TKeyItem>(TKeyItem[] key) where TKeyItem: unmanaged
+        {
+            fixed (void* keyPointer = key)
+            {
+                return Remove(new MemorySlice(keyPointer, key.Length * sizeof(TKeyItem)));
+            }
+        }
+
+        public bool TryRemove<TKeyItem>(TKeyItem[] key, out MemorySlice value) where TKeyItem : unmanaged
+        {
+            fixed (void* keyPointer = key)
+            {
+                return TryRemove(new MemorySlice(keyPointer, key.Length * sizeof(TKeyItem)), out value);
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (IsDisposed) return;
+            base.Dispose(disposing);
+            if (disposing && mappingSession != null) mappingSession.Dispose();
         }
     }
 }

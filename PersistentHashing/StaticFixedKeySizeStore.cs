@@ -25,20 +25,70 @@ using System.Threading;
 
 namespace PersistentHashing
 {
-    public unsafe sealed class StaticFixedKeySizeStore<TKey>: StaticStore<TKey, MemorySlice> where TKey: unmanaged
+
+    public unsafe sealed class StaticFixedKeySizeStore<TKey, TValue> : AbstractStaticStore<TKey, TValue> where TKey : unmanaged
+    {
+
+        private long initialDataFileSize;
+        private int dataFileSizeGrowthIncrement;
+        private readonly IValueSerializer<TValue> valueSerializer;
+
+        public StaticFixedKeySizeStore(string filePathPathWithoutExtension, long capacity, Func<TKey, long> hashFunction, IValueSerializer<TValue> valueSerializer,
+            HashTableOptions<TKey, TValue> options)
+            : base(filePathPathWithoutExtension, capacity,
+                  new BaseHashTableOptions<TKey, TValue>
+                  {
+                      HashFunction = hashFunction,
+                      KeyComparer = options?.KeyComparer ?? EqualityComparer<TKey>.Default,
+                      ValueComparer = options?.ValueComparer
+                  })
+        {
+            initialDataFileSize = options?.InitialDataFileSize ?? 8 * 1024 * 1024;
+            dataFileSizeGrowthIncrement = options?.DataFileSizeGrowthIncrement ?? 4 * 1024 * 1024;
+            this.valueSerializer = valueSerializer;
+        }
+
+
+        protected override int GetRecordSize()
+        {
+            return Unsafe.SizeOf<StaticHashTableRecord<TKey, long>>();
+        }
+
+        public StaticConcurrentFixedKeySizeHashTable<TKey, TValue> GetConcurrentHashTable()
+        {
+            config.IsThreadSafe = true;
+            EnsureInitialized();
+            return new StaticConcurrentFixedKeySizeHashTable<TKey, TValue>(config, valueSerializer);
+        }
+
+        public StaticConcurrentFixedKeySizeHashTable<TKey, TValue> GetThreadUnsafeHashTable()
+        {
+            EnsureInitialized();
+            return new StaticConcurrentFixedKeySizeHashTable<TKey, TValue>(config, valueSerializer );
+        }
+
+        protected override DataFile OpenDataFile()
+        {
+            return new DataFile(config.DataFilePath, initialDataFileSize, dataFileSizeGrowthIncrement);
+        }
+
+    }
+
+
+    public unsafe sealed class StaticFixedKeySizeStore<TKey>: AbstractStaticStore<TKey, MemorySlice> where TKey: unmanaged
     {
 
         private long initialDataFileSize;
         private int dataFileSizeGrowthIncrement;
 
         public StaticFixedKeySizeStore(string filePathPathWithoutExtension, long capacity, Func<TKey, long> hashFunction,
-            FixedKeySizeHashTableOptions<TKey> options)
+            HashTableOptions<TKey, MemorySlice> options)
             : base(filePathPathWithoutExtension, capacity, 
                   new BaseHashTableOptions<TKey, MemorySlice>
                   {
                       HashFunction = hashFunction,
                       KeyComparer = options?.KeyComparer ?? EqualityComparer<TKey>.Default,
-                      ValueComparer = MemorySlice.EqualityComparer
+                      ValueComparer = options?.ValueComparer ?? MemorySlice.EqualityComparer
                   })
         {
             initialDataFileSize = options?.InitialDataFileSize ?? 8 * 1024 * 1024;

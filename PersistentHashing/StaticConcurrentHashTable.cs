@@ -22,7 +22,6 @@ namespace PersistentHashing
 
     public unsafe class StaticConcurrentHashTable<TKey, TValue>
         : StaticConcurrentAbstractHashTable<TKey, TValue, long, long>
-        where TKey : unmanaged
     {
         internal MemoryMappingSession mappingSession;
 
@@ -68,7 +67,7 @@ namespace PersistentHashing
         protected internal override StaticHashTableRecord<long, long> StoreItem(TKey key, TValue value, long hash)
         {
             var target = new SerializationTarget(config.DataFile, dataPointer);
-            itemSerializer.Serialize(key, value, target);
+            itemSerializer.Serialize(key, value, ref target);
 
             if (target.dataOffset == 0) throw new InvalidOperationException("SerializationTarget.GetTargetAddress must be called");
             return new StaticHashTableRecord<long, long>(hash, target.dataOffset);

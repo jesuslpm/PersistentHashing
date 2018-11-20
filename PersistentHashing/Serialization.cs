@@ -44,14 +44,49 @@ namespace PersistentHashing
     public unsafe interface IValueSerializer<T>
     {
         T Deserialize(void* source);
-        void Serialize(T obj, SerializationTarget target);
+        void Serialize(T obj, ref SerializationTarget target);
     }
 
     public unsafe interface ItemSerializer<TKey, TValue>
     {
         TKey DeserializeKey(void* source);
         TValue DeserializeValue(void* source);
-        void Serialize(TKey key, TValue value, SerializationTarget target);
+        void Serialize(TKey key, TValue value, ref SerializationTarget target);
+    }
+
+    public unsafe class StringStringSerializer : ItemSerializer<string, string>
+    {
+        public string DeserializeKey(void* source)
+        {
+            return new string((char*)((int*)source + 1), 0, *(int*)source);
+        }
+
+        public string DeserializeValue(void* source)
+        {
+            int keyLength = *(int*)source;
+            void* valueSource = (byte*)source + sizeof(int) + keyLength * sizeof(char);
+            return new string((char*)((int*)valueSource + 1), 0, *(int*)valueSource);
+        }
+
+        public void Serialize(string key, string value, ref SerializationTarget target)
+        {
+            void* targetAddress = target.GetTargetAddress((key.Length + value.Length) * sizeof(char) + 2 * sizeof(int));
+            fixed (void* keyPointer = key)
+            {
+                *(int*)targetAddress = key.Length;
+                var keyTargetSpan = new Span<byte>((int*)targetAddress + 1, key.Length * sizeof(char));
+                var keySourceSpan = new ReadOnlySpan<byte>(keyPointer, key.Length * sizeof(char));
+                keySourceSpan.CopyTo(keyTargetSpan);
+            }
+            targetAddress = (byte*)targetAddress + key.Length * sizeof(char) + sizeof(int);
+            fixed (void* valuePointer = value)
+            {
+                *(int*)targetAddress = value.Length;
+                var valueTargetSpan = new Span<byte>((int*)targetAddress + 1, value.Length * sizeof(char));
+                var valueSourceSpan = new ReadOnlySpan<byte>(valuePointer, value.Length * sizeof(char));
+                valueSourceSpan.CopyTo(valueTargetSpan);
+            }
+        }
     }
 
 
@@ -62,7 +97,7 @@ namespace PersistentHashing
             return new string((char*)((int *)source + 1), 0, *(int*) source);
         }
 
-        public void Serialize(string obj, SerializationTarget serializationTarget)
+        public void Serialize(string obj, ref SerializationTarget serializationTarget)
         {
             fixed (void *pointer = obj)
             {
@@ -82,24 +117,24 @@ namespace PersistentHashing
 
         public string Deserialize(void *source)
         {
-            return Encoding.UTF8.GetString((byte*)((int *)source+1), *(int *)source / sizeof(char));
+            return Encoding.UTF8.GetString((byte*)((int*)source+1), *(int *)source);
         }
 
-        public void Serialize(string str, SerializationTarget target)
+        public void Serialize(string str, ref SerializationTarget target)
         {
             var size = str.Length * 4;
             if (size > 32 * 1024)
             {
-                SerializeUsingArrayPool(str, target, size);
+                SerializeUsingArrayPool(str, ref target, size);
             }
             else
             {
-                SerializeUsingStackAllocation(str, target, size);
+                SerializeUsingStackAllocation(str, ref target, size);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void SerializeUsingArrayPool(string str, SerializationTarget target, int size)
+        private static void SerializeUsingArrayPool(string str, ref SerializationTarget target, int size)
         {
             byte[] buffer = null;
             try
@@ -118,16 +153,16 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SerializeUsingStackAllocation(string str, SerializationTarget target, int size)
+        private void SerializeUsingStackAllocation(string str, ref SerializationTarget target, int size)
         {
             // avoid declaring other local vars, or doing work with stackalloc
             // to prevent the .locals init cil flag , see: https://github.com/dotnet/coreclr/issues/1279
             byte* buffer = stackalloc byte[size];
-            SerializeUsingStackAllocationImpl(buffer, str, target, size);
+            SerializeUsingStackAllocationImpl(buffer, str, ref target, size);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SerializeUsingStackAllocationImpl(byte* buffer, string str, SerializationTarget target, int size)
+        private void SerializeUsingStackAllocationImpl(byte* buffer, string str, ref SerializationTarget target, int size)
         {
             fixed (char* chars = str)
             {

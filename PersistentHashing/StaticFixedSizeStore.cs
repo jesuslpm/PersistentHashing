@@ -26,7 +26,7 @@ using System.Threading;
 namespace PersistentHashing
 {
     internal unsafe sealed class StaticFixedSizeStore<TKey, TValue>
-        : StaticStore<TKey, TValue>, IDisposable 
+        : AbstractStaticStore<TKey, TValue>, IDisposable 
         where TKey:unmanaged 
         where TValue: unmanaged
     {

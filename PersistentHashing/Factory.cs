@@ -32,22 +32,28 @@ namespace PersistentHashing
             return store.GetConcurrentHashTable();
         }
 
-        public static StaticFixedKeySizeStore<TKey> GetStaticFixedKeySizeStore<TKey>(string filePathWithoutExtension, long capacity, Func<TKey, long> hashFunction, FixedKeySizeHashTableOptions<TKey> options = null) 
+        public static StaticFixedKeySizeStore<TKey> GetStaticFixedKeySizeStore<TKey>(string filePathWithoutExtension, long capacity, Func<TKey, long> hashFunction, HashTableOptions<TKey, MemorySlice> options = null) 
             where TKey: unmanaged
         {
             return new StaticFixedKeySizeStore<TKey>(filePathWithoutExtension, capacity, hashFunction, options);
         }
 
-        public static StaticVariableSizeStore GetStaticVariableSizeStore(string filePathWithoutExtension, long capacity, VariableSizeHashTableOptions options = null)
+        public static StaticFixedKeySizeStore<TKey, TValue> GetStaticFixedKeySizeStore<TKey, TValue>(string filePathWithoutExtension, long capacity, Func<TKey, long> hashFunction, IValueSerializer<TValue> valueSerializer, HashTableOptions<TKey, TValue> options = null)
+            where TKey : unmanaged
         {
-            return new StaticVariableSizeStore(filePathWithoutExtension, capacity, options);
+            return new StaticFixedKeySizeStore<TKey, TValue>(filePathWithoutExtension, capacity, hashFunction, valueSerializer, options);
         }
 
-
-        public static object GetStaticConcurrentFixedKeySizeStore(string filePathWithoutExtension)
+        public static StaticStore GetStaticStore(string filePathWithoutExtension, long capacity, Func<MemorySlice, long> hashFunction = null, HashTableOptions<MemorySlice, MemorySlice> options = null)
         {
-            throw new NotImplementedException();
+            return new StaticStore(filePathWithoutExtension, capacity, hashFunction, options);
         }
+
+        public static StaticStore<TKey, TValue> GetStaticStore<TKey, TValue>(string filePathWithoutExtension, long capacity, Func<TKey, long> hashFunction, ItemSerializer<TKey, TValue> itemSerializer, HashTableOptions<TKey, TValue> options = null)
+        {
+            return new StaticStore<TKey, TValue>(filePathWithoutExtension, capacity, hashFunction, itemSerializer, options);
+        }
+
 
         public static object GetStaticConcurrentStore()
         {

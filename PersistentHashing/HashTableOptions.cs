@@ -35,18 +35,12 @@ namespace PersistentHashing
         public IEqualityComparer<TValue> ValueComparer;
     }
 
-    public class FixedKeySizeHashTableOptions<TKey>
+    public class HashTableOptions<TKey, TValue>
     {
         public IEqualityComparer<TKey> KeyComparer;
+        public IEqualityComparer<TValue> ValueComparer;
         public long InitialDataFileSize;
         public int DataFileSizeGrowthIncrement;
     }
 
-
-    public class VariableSizeHashTableOptions
-    {
-        public long InitialDataFileSize;
-        public int DataFileSizeGrowthIncrement;
-        public Func<MemorySlice, long> HashFunction;
-    }
 }

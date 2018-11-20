@@ -36,15 +36,33 @@ namespace PersistentHashing
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long FastHash64(byte* buffer, int length, long seed= 0)
+        public static unsafe long FastHash64(byte* buffer, int length, long seed = 0)
         {
-            return unchecked(FastHash64(buffer, length, seed));
+            return unchecked((long)FastHash64(buffer, (uint)length, (ulong)seed));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe long FastHash64(MemorySlice slice)
         {
             return unchecked(FastHash64((byte*)slice.Pointer, slice.Size));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe long FastHash64(string str)
+        {
+            fixed (void* buffer = str)
+            {
+                return unchecked((long)FastHash64((byte*)buffer, (uint)(str.Length * sizeof(char)), 0UL));
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe long FastHash64(string str, long seed = 0)
+        {
+            fixed (void* buffer = str)
+            {
+                return unchecked((long)FastHash64((byte*)buffer, (uint)(str.Length * sizeof(char)), (ulong)seed));
+            }
         }
 
         public static unsafe ulong FastHash64(byte* buffer, uint length, ulong seed=0)

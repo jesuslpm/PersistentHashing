@@ -53,6 +53,15 @@ namespace PersistentHashing
             return new Span<byte>(Pointer, Size);
         }
 
+        public T[] ToArray<T>() where T:unmanaged
+        {
+            int length = (Size + sizeof(T) - 1) / sizeof(T);
+            var a = new T[length];
+            if (length > 0) a[length - 1] = default;
+            ToReadOnlySpan().CopyTo(MemoryMarshal.Cast<T, byte>(a.AsSpan<T>()));
+            return a;
+        }
+
         public static explicit operator ReadOnlySpan<byte>(MemorySlice slice)
         {
             return slice.ToReadOnlySpan();
