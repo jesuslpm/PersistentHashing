@@ -50,6 +50,7 @@ namespace PersistentHashing
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe long FastHash64(string str)
         {
+            if (str == null) return 0;
             fixed (void* buffer = str)
             {
                 return unchecked((long)FastHash64((byte*)buffer, (uint)(str.Length * sizeof(char)), 0UL));

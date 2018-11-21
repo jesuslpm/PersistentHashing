@@ -69,6 +69,7 @@ namespace PersistentHashing.Tests
             try
             {
                 var dic = CreateRandomDictionary(56);
+                dic.Add("null", null);
                 CreateHashTable(56);
                 long count = 0;
                 foreach (var kv in dic)
@@ -81,6 +82,9 @@ namespace PersistentHashing.Tests
                     Assert.Equal(kv.Value, hashTable[kv.Key]);
                     Assert.True(hashTable.ContainsKey(kv.Key));
                 }
+                // dictionary doesn't support null keys, but HashTable does.
+                hashTable.Add(null, null);
+                Assert.Null(hashTable[null]);
             }
             finally
             {

@@ -57,7 +57,9 @@ namespace PersistentHashing
         protected internal override TValue GetValue(in StaticHashTableRecord<TKey, long> record)
         {
             byte* valueAddress = dataPointer + record.ValueOrOffset;
-            return valueSerializer.Deserialize(new ReadOnlySpan<byte>( valueAddress + sizeof(int), *(int*)valueAddress));
+            int valueSize = *(int*)valueAddress;
+            if (valueSize < 0) return default;
+            return valueSerializer.Deserialize(new ReadOnlySpan<byte>( valueAddress + sizeof(int), valueSize));
         }
 
         protected internal override StaticHashTableRecord<TKey, long> StoreItem(TKey key, TValue value, long hash)

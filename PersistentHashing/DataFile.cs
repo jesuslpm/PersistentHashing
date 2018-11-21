@@ -132,21 +132,24 @@ namespace PersistentHashing
 
         public FileSlice AllocateValue(int size)
         {
-            
-            var offset = AllocateBytes(size + sizeof(int), out byte *baseAddress);
+            var valueSize = size > 0 ? size : 0;
+            var offset = AllocateBytes(valueSize + sizeof(int), out byte *baseAddress);
             var address =baseAddress + offset;
             *(int*)address = size;
-            return new FileSlice(new Span<byte>(address + sizeof(int), size), offset);
+            return new FileSlice(size < 0 ? Span<byte>.Empty : new Span<byte>(address + sizeof(int), size), offset);
         }
 
         public FileItemSlice AllocateItem(int keySize, int valueSize )
         {
-            var offset = AllocateBytes(keySize + valueSize + 2* sizeof(int), out byte* baseAddress);
+            var itemSize = (keySize > 0 ? keySize : 0) + (valueSize > 0 ? valueSize : 0);
+            var offset = AllocateBytes(itemSize + 2* sizeof(int), out byte* baseAddress);
             var keyAddress = baseAddress + offset;
             *(int*)keyAddress = keySize;
             var valueAddress = keyAddress + sizeof(int) + keySize;
             *(int*)valueAddress = valueSize;
-            return new FileItemSlice(new Span<byte>(keyAddress + sizeof(int), keySize), new Span<byte>(valueAddress + sizeof(int), valueSize), offset);
+            return new FileItemSlice(
+                keySize < 0 ? Span<byte>.Empty : new Span<byte>(keyAddress + sizeof(int), keySize), 
+                valueSize < 0 ? Span<byte>.Empty : new Span<byte>(valueAddress + sizeof(int), valueSize), offset);
         }
 
         public void Free(long offset)

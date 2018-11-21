@@ -37,9 +37,11 @@ namespace PersistentHashing
 
         public long Serialize(string key, string value, DataFile dataFile)
         {
-            var item = dataFile.AllocateItem(key.Length * sizeof(char), value.Length * sizeof(char));
-            key.AsSpan().CopyTo(MemoryMarshal.Cast<byte, char>(item.KeySpan));
-            value.AsSpan().CopyTo(MemoryMarshal.Cast<byte, char>(item.ValueSpan));
+            var item = dataFile.AllocateItem(
+                key == null ? -1 : key.Length * sizeof(char), 
+                value == null ? -1 : value.Length * sizeof(char));
+            if (key != null) key.AsSpan().CopyTo(MemoryMarshal.Cast<byte, char>(item.KeySpan));
+            if (value != null) value.AsSpan().CopyTo(MemoryMarshal.Cast<byte, char>(item.ValueSpan));
             return item.Offset;
         }
     }
@@ -55,8 +57,8 @@ namespace PersistentHashing
 
         public long Serialize(string value, DataFile dataFile)
         {
-            var fileSlice = dataFile.AllocateValue(value.Length * sizeof(char));
-            value.AsSpan().CopyTo(MemoryMarshal.Cast<byte, char>(fileSlice.Span));
+            var fileSlice = dataFile.AllocateValue(value == null ? -1 : value.Length * sizeof(char));
+            if (value != null) value.AsSpan().CopyTo(MemoryMarshal.Cast<byte, char>(fileSlice.Span));
             return fileSlice.Offset;
         }
     }

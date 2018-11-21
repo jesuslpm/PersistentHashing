@@ -57,13 +57,17 @@ namespace PersistentHashing
         protected internal override TKey GetKey(in StaticHashTableRecord<long, long> record)
         {
             byte* keyAddress = dataPointer + record.ValueOrOffset;
-            return itemSerializer.DeserializeKey(new ReadOnlySpan<byte>(keyAddress + sizeof(int), *(int*)keyAddress));
+            int keySize = *(int*)keyAddress;
+            if (keySize < 0) return default;
+            return itemSerializer.DeserializeKey(new ReadOnlySpan<byte>(keyAddress + sizeof(int), keySize));
         }
 
         protected internal override TValue GetValue(in StaticHashTableRecord<long, long> record)
         {
             byte* keyAddress = dataPointer + record.ValueOrOffset;
             byte* valueAddress = keyAddress + sizeof(int) + *(int*)keyAddress;
+            int valueSize = *(int*)valueAddress;
+            if (valueSize < 0) return default;
             return itemSerializer.DeserializeValue(new ReadOnlySpan<byte>(valueAddress + sizeof(int), *(int*)valueAddress));
         }
 
