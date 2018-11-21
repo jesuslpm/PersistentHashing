@@ -56,15 +56,14 @@ namespace PersistentHashing
 
         protected internal override TValue GetValue(in StaticHashTableRecord<TKey, long> record)
         {
-            return valueSerializer.Deserialize(dataPointer + record.ValueOrOffset);
+            byte* valueAddress = dataPointer + record.ValueOrOffset;
+            return valueSerializer.Deserialize(new ReadOnlySpan<byte>( valueAddress + sizeof(int), *(int*)valueAddress));
         }
 
         protected internal override StaticHashTableRecord<TKey, long> StoreItem(TKey key, TValue value, long hash)
         {
-            var target = new SerializationTarget(config.DataFile, dataPointer);
-            valueSerializer.Serialize(value, ref target);
-            //if (target.dataOffset == 0) throw new InvalidOperationException("SerializationTarget.GetTargetSlice must be called");
-            return new StaticHashTableRecord<TKey, long>(key, target.dataOffset);
+            var offset = valueSerializer.Serialize(value, config.DataFile);
+            return new StaticHashTableRecord<TKey, long>(key, offset);
         }
 
         protected override void Dispose(bool disposing)

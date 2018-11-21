@@ -25,6 +25,32 @@ using System.Threading.Tasks;
 
 namespace PersistentHashing
 {
+    public ref struct FileSlice
+    {
+        public Span<byte> Span;
+        public long Offset;
+
+        public FileSlice(Span<byte> span, long offset)
+        {
+            this.Span = span;
+            this.Offset = offset;
+        }
+    }
+
+    public ref struct FileItemSlice
+    {
+        public Span<byte> KeySpan;
+        public Span<byte> ValueSpan;
+        public long Offset;
+
+        public FileItemSlice(Span<byte> keySpan, Span<byte> valueSpan, long offset)
+        {
+            this.KeySpan = keySpan;
+            this.ValueSpan = valueSpan;
+            this.Offset = offset;
+        }
+    }
+
     public unsafe class DataFile : IDisposable
     {
         MemoryMapper memoryMapper;
@@ -84,7 +110,7 @@ namespace PersistentHashing
             return memoryMapper.OpenSession();
         }
 
-        public long Allocate(int bytesToAllocate)
+        public long AllocateBytes(int bytesToAllocate, out byte* baseAddress)
         {
             CheckDisposed();   
             long newFreeSpaceOffset = Interlocked.Add(ref dataFileHeaderPointer->FreeSpaceOffset, bytesToAllocate);
@@ -97,11 +123,30 @@ namespace PersistentHashing
                         long bytesToGrow = dataFileHeaderPointer->FreeSpaceOffset - memoryMapper.Length;
                         if (bytesToGrow < growthIncrement) bytesToGrow = growthIncrement;
                         bytesToGrow = (bytesToGrow + growthIncrement - 1) / growthIncrement;
-                        memoryMapper.Grow(bytesToGrow);
                     }
                 }
             }
+            baseAddress = memoryMapper.mapping.GetBaseAddress();
             return newFreeSpaceOffset - bytesToAllocate;
+        }
+
+        public FileSlice AllocateValue(int size)
+        {
+            
+            var offset = AllocateBytes(size + sizeof(int), out byte *baseAddress);
+            var address =baseAddress + offset;
+            *(int*)address = size;
+            return new FileSlice(new Span<byte>(address + sizeof(int), size), offset);
+        }
+
+        public FileItemSlice AllocateItem(int keySize, int valueSize )
+        {
+            var offset = AllocateBytes(keySize + valueSize + 2* sizeof(int), out byte* baseAddress);
+            var keyAddress = baseAddress + offset;
+            *(int*)keyAddress = keySize;
+            var valueAddress = keyAddress + sizeof(int) + keySize;
+            *(int*)valueAddress = valueSize;
+            return new FileItemSlice(new Span<byte>(keyAddress + sizeof(int), keySize), new Span<byte>(valueAddress + sizeof(int), valueSize), offset);
         }
 
         public void Free(long offset)
@@ -109,16 +154,16 @@ namespace PersistentHashing
             //TODO: implementing free space management.
         }
 
-        internal long Write(ReadOnlySpan<byte> value, byte* baseAddress)
-        {
-            int bytesToAllocateAndCopy = value.Length + sizeof(int);
-            var valueOffset = Allocate(bytesToAllocateAndCopy);
-            byte* destination = baseAddress + valueOffset;
-            *(int*)destination = value.Length;
-            var destinationSpan = new Span<byte>(destination + sizeof(int), value.Length);
-            value.CopyTo(destinationSpan);
-            return valueOffset;
-        }
+        //internal long Write(ReadOnlySpan<byte> value, byte* baseAddress)
+        //{
+        //    int bytesToAllocateAndCopy = value.Length + sizeof(int);
+        //    var valueOffset = Allocate(bytesToAllocateAndCopy);
+        //    byte* destination = baseAddress + valueOffset;
+        //    *(int*)destination = value.Length;
+        //    var destinationSpan = new Span<byte>(destination + sizeof(int), value.Length);
+        //    value.CopyTo(destinationSpan);
+        //    return valueOffset;
+        //}
 
         public bool IsDisposed { get; private set; }
 

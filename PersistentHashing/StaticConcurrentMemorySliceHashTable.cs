@@ -75,18 +75,10 @@ namespace PersistentHashing
         {
             // we store key and value contiguously in the data file.
 
-            long keyValueOffset = config.DataFile.Allocate(key.Size + value.Size + 2 * sizeof(int));
-            var keyPointer = dataPointer + keyValueOffset;
-            *(int*)keyPointer = key.Size;
-            var destinationKeySpan = new Span<byte>(keyPointer + sizeof(int), key.Size);
-            key.ToReadOnlySpan().CopyTo(destinationKeySpan);
-
-            var valuePointer = keyPointer + sizeof(int) + key.Size;
-            *(int*)valuePointer = value.Size;
-            var destinationValueSpan = new Span<byte>(valuePointer + sizeof(int), value.Size);
-            value.ToReadOnlySpan().CopyTo(destinationValueSpan);
-
-            return new StaticHashTableRecord<long, long>(hash, keyValueOffset);
+            var item = config.DataFile.AllocateItem(key.Size, value.Size);
+            key.ToReadOnlySpan().CopyTo(item.KeySpan);
+            value.ToReadOnlySpan().CopyTo(item.ValueSpan);
+            return new StaticHashTableRecord<long, long>(hash, item.Offset);
         }
 
         public bool TryAdd<TKeyItem, TValueItem>(TKeyItem[] key, TValueItem[] value) where TKeyItem: unmanaged where TValueItem: unmanaged

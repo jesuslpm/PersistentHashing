@@ -116,13 +116,13 @@ namespace PersistentHashing
             if (IsDisposed) throw new ObjectDisposedException(nameof(MemoryMapper));
         }
 
-        public void Grow(long bytesToGrow)
+        public byte* Grow(long bytesToGrow)
         {
             CheckDisposed();
             lock (SyncObject)
             {
                 CheckDisposed();
-                var newMapping = MemoryMapping.Grow(bytesToGrow, this.mapping);
+                var newMapping = MemoryMapping.Grow(bytesToGrow, mapping);
                 if (mapping != newMapping)
                 {
                     var oldMapping = mapping;
@@ -133,6 +133,7 @@ namespace PersistentHashing
                         session.AddMapping(newMapping);
                     }
                 }
+                return mapping.GetBaseAddress();
             }
         }
 

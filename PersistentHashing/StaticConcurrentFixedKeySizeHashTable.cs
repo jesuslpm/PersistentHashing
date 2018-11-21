@@ -58,11 +58,9 @@ namespace PersistentHashing
 
         protected internal override StaticHashTableRecord<TKey, long> StoreItem(TKey key, MemorySlice value, long hash)
         {
-            long valueOffset = config.DataFile.Allocate(value.Size + sizeof(int));
-            *(int*)(dataPointer + valueOffset) = value.Size;
-            var destinationSpan = new Span<byte>(dataPointer + valueOffset + sizeof(int), value.Size);
-            value.ToReadOnlySpan().CopyTo(destinationSpan);
-            return new StaticHashTableRecord<TKey, long>(key, valueOffset);
+            var fileSlice = config.DataFile.AllocateValue(value.Size);
+            value.ToReadOnlySpan().CopyTo(fileSlice.Span);
+            return new StaticHashTableRecord<TKey, long>(key, fileSlice.Offset);
         }
 
         public bool TryAdd(TKey key, byte[] value)

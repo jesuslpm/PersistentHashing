@@ -56,21 +56,21 @@ namespace PersistentHashing
 
         protected internal override TKey GetKey(in StaticHashTableRecord<long, long> record)
         {
-            return itemSerializer.DeserializeKey(dataPointer + record.ValueOrOffset);
+            byte* keyAddress = dataPointer + record.ValueOrOffset;
+            return itemSerializer.DeserializeKey(new ReadOnlySpan<byte>(keyAddress + sizeof(int), *(int*)keyAddress));
         }
 
         protected internal override TValue GetValue(in StaticHashTableRecord<long, long> record)
         {
-            return itemSerializer.DeserializeValue(dataPointer + record.ValueOrOffset);
+            byte* keyAddress = dataPointer + record.ValueOrOffset;
+            byte* valueAddress = keyAddress + sizeof(int) + *(int*)keyAddress;
+            return itemSerializer.DeserializeValue(new ReadOnlySpan<byte>(valueAddress + sizeof(int), *(int*)valueAddress));
         }
 
         protected internal override StaticHashTableRecord<long, long> StoreItem(TKey key, TValue value, long hash)
         {
-            var target = new SerializationTarget(config.DataFile, dataPointer);
-            itemSerializer.Serialize(key, value, ref target);
-
-            if (target.dataOffset == 0) throw new InvalidOperationException("SerializationTarget.GetTargetAddress must be called");
-            return new StaticHashTableRecord<long, long>(hash, target.dataOffset);
+            var offset = itemSerializer.Serialize(key, value, config.DataFile);
+            return new StaticHashTableRecord<long, long>(hash, offset);
         }
 
         protected override void Dispose(bool disposing)
