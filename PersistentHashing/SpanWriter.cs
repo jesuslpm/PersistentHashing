@@ -39,9 +39,42 @@ namespace PersistentHashing
             _position += sizeof(T);
         }
 
+        public void Write<T>(T? value) where T : unmanaged
+        {
+            if (value==null)
+            {
+                Write(true);
+            }
+            else
+            {
+                Write(false);
+                Write(value.Value);
+            }
+        }
+
+        public void WriteUtf8(string value)
+        {
+            int bytesToWrite = sizeof(int) + (value == null ? 0 : Encoding.UTF8.GetByteCount(value));
+            if (_position + bytesToWrite > span.Length) throw new ArgumentException();
+            if (value == null)
+            {
+                Unsafe.As<byte, int>(ref Unsafe.Add(ref span[0], _position)) = -1;
+            }
+            else
+            {
+                var slice = span.Slice(_position + sizeof(int));
+                fixed (byte* pointer = slice)
+                fixed (char* chars = value)
+                {
+                    Encoding.UTF8.GetBytes(chars, value.Length, pointer, slice.Length);
+                }
+            }
+            _position += bytesToWrite;
+        }
+
         public void Write(string value)
         {
-            int bytesToWrite = sizeof(int) + value == null ? 0 : value.Length * sizeof(char);
+            int bytesToWrite = sizeof(int) + (value == null ? 0 : value.Length * sizeof(char));
             if (_position + bytesToWrite > span.Length) throw new ArgumentException();
             if (value == null)
             {
