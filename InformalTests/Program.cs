@@ -1,13 +1,6 @@
-﻿using PersistentHashing;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InformalTests
 {
@@ -21,21 +14,22 @@ namespace InformalTests
             var watch = Stopwatch.StartNew();
             for (int i =0; i < n; i++)
             {
-                ThisMethodDoesNotInitializeStackAllocatedMemory();
+                ThisMethodDoes_NOT_InitializeStackAllocatedMemory();
             }
             watch.Stop();
-            Console.WriteLine($"Elapsed {watch.Elapsed}");
+            Console.WriteLine($"NOT INITIALIZED elapsed time {watch.Elapsed}");
 
             watch.Restart();
             for (int i = 0; i < n; i++)
             {
-                ThisMethodAllocatesMemoryOnTheHeap();
+                ThisMethodInitializeStackAllocatedMemory();
             }
             watch.Stop();
-            Console.WriteLine($"Elapsed {watch.Elapsed}");
+            Console.WriteLine($"INITIALIZED Elapsed time {watch.Elapsed}");
         }
 
-        private static unsafe string ThisMethodDoesNotInitializeStackAllocatedMemory()
+
+        private static unsafe string ThisMethodDoes_NOT_InitializeStackAllocatedMemory()
         {
             // avoid declaring other local vars, or doing work with stackalloc
             // to prevent the .locals init cil flag , see: https://github.com/dotnet/coreclr/issues/1279
@@ -43,18 +37,19 @@ namespace InformalTests
             return CreateString(pointer, 256);
         }
 
+        private static unsafe string ThisMethodInitializeStackAllocatedMemory()
+        {
+            //Declaring a variable other than the stackallocated, causes
+            //compiler to emit .locals int cil flag, so it's slower
+            int i = 256;
+            char* pointer = stackalloc char[256];
+            return CreateString(pointer, i);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe string CreateString(char *pointer, int length)
+        private static unsafe string CreateString(char* pointer, int length)
         {
             return "";
         }
-
-        private static unsafe string ThisMethodAllocatesMemoryOnTheHeap()
-        {
-            var a = new char[256];
-            return "";
-        }
-
-
     }
 }

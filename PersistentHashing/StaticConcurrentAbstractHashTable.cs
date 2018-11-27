@@ -577,7 +577,7 @@ namespace PersistentHashing
                 ref var record = ref Record(recordPointer);
                 LockIfNeeded(ref context);
 
-                if (record.Distance == 0) return null;
+                if (record.Distance < distance) return null;
                 if (AreKeysEqual(Record(recordPointer), context.Key, context.Hash))
                 {
                     return recordPointer;
