@@ -66,7 +66,7 @@ namespace PersistentHashing
                 memoryMapper = new MemoryMapper(filePath, initialSize);
                 mapping = MemoryMapping.Create(memoryMapper.fs, Constants.AllocationGranularity);
                 dataFileHeaderPointer = (DataFileHeader*)mapping.GetBaseAddress();
-                growthIncrement = (growthIncrement + Constants.AllocationGranularityMask) / Constants.AllocationGranularityMask;
+                this.growthIncrement = (growthIncrement + Constants.AllocationGranularityMask) / Constants.AllocationGranularityMask;
 
                 if (isNew)
                 {

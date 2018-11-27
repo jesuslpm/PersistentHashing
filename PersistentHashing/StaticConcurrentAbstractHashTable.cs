@@ -449,7 +449,8 @@ namespace PersistentHashing
             context.CurrentSlot = context.InitialSlot;
             TKey key = context.Key;
             var newRecord = StoreItem(key, value, context.Hash);
-            
+
+            int recordsVisited = 0;
             while (true)
             {
                 LockIfNeeded(ref context);
@@ -483,7 +484,7 @@ namespace PersistentHashing
                     newRecord = tempRecord;
                     distance = currentRecordDistance;
                 }
-                if (distance > config.MaxAllowedDistance)
+                if (++recordsVisited > config.MaxAllowedDistance || distance > config.MaxAllowedDistance)
                 {
                     ReachedMaxAllowedDistance();
                 }
@@ -602,6 +603,7 @@ namespace PersistentHashing
         {
             if (context.RemainingSlotsInChunk == 0)
             {
+                if (context.LockIndex > 7) throw new InvalidOperationException("Max Locks per Operation Exceeded");
                 if (context.TakenLocks[context.LockIndex] == false)
                 {
                     SyncObject syncObject = config.SyncObjects[context.CurrentSlot >> config.ChunkBits];

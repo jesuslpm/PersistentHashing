@@ -239,13 +239,21 @@ namespace PersistentHashing.Tests
             {
                 var dic = CreateRandomDictionary(100);
                 CreateHashTable(56);
-                Assert.Throws<InvalidOperationException>(() =>
+                Exception x=null;
+                try
                 {
+                    int i = 0;
                     foreach (var kv in dic)
                     {
+                        i++;
                         hashTable.TryAdd(kv.Key, kv.Value);
                     }
-                });
+                }
+                catch (Exception ex)
+                {
+                    x = ex;
+                }
+                Assert.NotNull(x);
             }
             finally
             {

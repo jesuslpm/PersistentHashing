@@ -266,7 +266,7 @@ namespace PersistentHashing.Tests
         [Fact]
         public void ExcedingCapatityShouldThrow()
         {
-            
+
             try
             {
                 var dic = CreateRandomDictionary(100);
