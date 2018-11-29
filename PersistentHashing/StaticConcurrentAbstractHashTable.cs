@@ -216,7 +216,7 @@ namespace PersistentHashing
        
         public bool TryAdd(TKey key, TValue value)
         {
-            // Trade-off: Performance vs DRY. The WET a more performant version won this time.
+            // Trade-off: Performance vs DRY. The WET and more performant version won this time.
 
             //DRY version:
             //return TryAdd(key, IdentityValueFactoryFunction, value, out TValue existingOrAddedValue);
@@ -440,6 +440,12 @@ namespace PersistentHashing
 
         private void RobinHoodAdd(ref OperationContext context, TValue value)
         {
+            if (Interlocked.Increment(ref config.HeaderPointer->RecordCount) > config.Capacity)
+            {
+                Interlocked.Decrement(ref config.HeaderPointer->RecordCount);
+                throw new InvalidOperationException("Capacity exceeded ");
+            }
+
             byte* recordPointer = GetRecordPointer(context.InitialSlot);
             short distance = 1; //start with 1 because 0 is reserved for empty slots.
 
@@ -468,7 +474,7 @@ namespace PersistentHashing
                         Interlocked.CompareExchange(ref config.HeaderPointer->MaxDistance, distance - 1, maxDistance);
                     }
 #endif
-                    Interlocked.Increment(ref config.HeaderPointer->RecordCount);
+                    
                     return;
                 }
                 else if (currentRecordDistance < distance) // found richer record

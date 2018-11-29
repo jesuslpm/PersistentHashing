@@ -66,7 +66,7 @@ namespace PersistentHashing
                 memoryMapper = new MemoryMapper(filePath, initialSize);
                 mapping = MemoryMapping.Create(memoryMapper.fs, Constants.AllocationGranularity);
                 dataFileHeaderPointer = (DataFileHeader*)mapping.GetBaseAddress();
-                this.growthIncrement = (growthIncrement + Constants.AllocationGranularityMask) / Constants.AllocationGranularityMask;
+                this.growthIncrement = (growthIncrement + Constants.AllocationGranularityMask) / Constants.AllocationGranularity * Constants.AllocationGranularity;
 
                 if (isNew)
                 {
@@ -122,7 +122,8 @@ namespace PersistentHashing
                     {
                         long bytesToGrow = dataFileHeaderPointer->FreeSpaceOffset - memoryMapper.Length;
                         if (bytesToGrow < growthIncrement) bytesToGrow = growthIncrement;
-                        bytesToGrow = (bytesToGrow + growthIncrement - 1) / growthIncrement;
+                        bytesToGrow = (bytesToGrow + growthIncrement - 1) / growthIncrement * growthIncrement;
+                        memoryMapper.Grow(bytesToGrow);
                     }
                 }
             }

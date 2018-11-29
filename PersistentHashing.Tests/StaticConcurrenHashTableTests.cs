@@ -68,7 +68,7 @@ namespace PersistentHashing.Tests
         {
             try
             {
-                var dic = CreateRandomDictionary(56);
+                var dic = CreateRandomDictionary(54);
                 dic.Add("null", null);
                 CreateHashTable(56);
                 long count = 0;
@@ -181,6 +181,36 @@ namespace PersistentHashing.Tests
                     dic.Remove(k);
                 }
                 Assert.Empty(dic);
+            }
+            finally
+            {
+                DeleteHashTable();
+            }
+        }
+
+        [Fact]
+        public void ItemsShouldBeOrderedByCurrentPortionOfHashValue()
+        {
+            try
+            {
+                var dic = CreateRandomDictionary(1792);
+                CreateHashTable(1792);
+                foreach (var kv in dic)
+                {
+                    hashTable.TryAdd(kv.Key, kv.Value);
+                }
+
+                long previousHashPortion = -1;
+                int i = 0;
+                foreach (var k in hashTable.Keys)
+                {
+                    if (i++ > 10)
+                    {
+                        long hashPortion = hashTable.config.HashFunction(k) & hashTable.config.HashMask;
+                        Assert.True(previousHashPortion <= hashPortion);
+                        previousHashPortion = hashPortion;
+                    }
+                }
             }
             finally
             {

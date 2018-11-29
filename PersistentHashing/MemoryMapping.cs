@@ -95,7 +95,7 @@ namespace PersistentHashing
                 bytesToMap = (ulong)mapping.fileStream.Length;
                 address = Win32FileMapping.MapViewOfFileEx(mmf.SafeMemoryMappedFileHandle.DangerousGetHandle(),
                    Win32FileMapping.FileMapAccess.Read | Win32FileMapping.FileMapAccess.Write,
-                   offsetPointer[1], offsetPointer[0], new UIntPtr(bytesToMap), null);
+                   0, 0, new UIntPtr(bytesToMap), null);
                 if (address == null) throw new Win32Exception();
                 mapping = new MemoryMapping()
                 {
