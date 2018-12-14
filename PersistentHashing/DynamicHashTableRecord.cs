@@ -25,95 +25,46 @@ using System.Threading.Tasks;
 
 namespace PersistentHashing
 {
-    [StructLayout(LayoutKind.Explicit)]
-    public struct DynamicTableRecord
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct DynamicTableRecord<TKeyOrHash, TValueOrOffset> where TKeyOrHash : unmanaged where TValueOrOffset : unmanaged
     {
-        [FieldOffset(0)]
-        public volatile int LowInt32;
-        [FieldOffset(0)]
-        public long Value;
+        /// <summary>
+        /// The key for fixed size and fixed key size hash tables.
+        /// The key hash for variable size hash tables
+        /// </summary>
+        public TKeyOrHash KeyOrHash;
+        /// <summary>
+        /// The value for fixed size hash tables
+        /// The data file offset of the value for fixed key size hash tables
+        /// The data file offset of the key-value for variable size hash tables
+        /// </summary>
+        public TValueOrOffset ValueOrOffset;
+        /// <summary>
+        /// The distance plus one to the initial slot. 
+        /// 0 means empty slot, 1 means 0 distance, 2 means 1 distance, and so on.
+        /// </summary>
+        public byte Distance;
 
-        /*
-           64 bits distributed as follows:
+        public byte SplitLevel;
 
-           Locked: 1 bit (bit 0, least significant bit)
-           RehashingLevel: 7 bits (bits 1 to 7)
-           DataOffset: 56 bits (bit 8 to 63)
-                      
-        */
-
-
-        public int Locked
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public DynamicTableRecord(TKeyOrHash keyOrHash, TValueOrOffset valueOrOffset, byte distance, byte splitLevel)
         {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                return (LowInt32 & 1);
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-#if DEBUG
-                if (value != 0 & value != 1) throw new ArgumentException($"Only 0 and 1 values are allowed, but you provided {value}");
-#endif
-                LowInt32 = (LowInt32 & (value | unchecked((int)0xFFFF_FFFE))) | value;
-            }
-        }
-
-        public int RehashingLevel
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                return (LowInt32 >> 1) & 0x7F;
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-#if DEBUG
-                if (value < 0 | value > 64) throw new ArgumentException($"value must be between 0 and 64, but you provided {value}");
-#endif
-                int n = value << 1;
-                LowInt32 = (LowInt32 & (n | unchecked((int)0xFFFF_FF01))) | n;
-            }
-        }
-
-        public long DataOffset
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                return Value >> 8;
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                long n = value << 8;
-                this.Value = (this.Value & (n | 0xFFL)) | n;
-            }
+            this.KeyOrHash = keyOrHash;
+            this.ValueOrOffset = valueOrOffset;
+            this.Distance = distance;
+            this.SplitLevel = splitLevel;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Lock(ref bool taken)
+        public DynamicTableRecord(TKeyOrHash keyOrHash, TValueOrOffset valueOrOffset, byte distance)
+            :this(keyOrHash, valueOrOffset, distance, 0)
         {
-            var spinWait = new SpinWait();
-            while (true)
-            {
-                int comparisonValue = LowInt32 & unchecked((int)0xFFFF_FFFE);
-                try { }
-                finally
-                {
-                    taken = comparisonValue == Interlocked.CompareExchange(ref LowInt32, comparisonValue | 1, comparisonValue) ;
-                }
-                if (taken) return;
-                spinWait.SpinOnce();
-            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ReleaseLock()
+        public DynamicTableRecord(TKeyOrHash keyOrHash, TValueOrOffset valueOrOffset) : this(keyOrHash, valueOrOffset, 0)
         {
-            LowInt32 &= unchecked((int)0xFFFF_FFFE);
         }
     }
 }
