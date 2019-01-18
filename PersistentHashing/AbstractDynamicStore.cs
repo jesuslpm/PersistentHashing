@@ -31,23 +31,9 @@ namespace PersistentHashing
         internal DynamicHashTableSizeState sizeState;
         internal DynamicHashTableConfig<TKey, TValue> config;
 
-        /// <summary>
-        /// Max distance ever seen in the hash table. 
-        /// MaxDistance is updated only on adding, It is not uptaded on removing.
-        /// It' only updated when building with DEBUG simbol defined.
-        /// </summary>
-        // MaxDistance starts with 0 while internal distance starts with 1. So, it is the real max distance.
-        public int MaxDistance => sizeState.HeaderPointer->MaxDistance;
-
-        //Note that float casts are not redundant as VS says.
-        public float LoadFactor => (float)Count / (float)sizeState.SlotCount;
-
-        // this is only updated when building with DEBUG simbol defined.
-        public float MeanDistance => (float)sizeState.HeaderPointer->DistanceSum / (float)Count;
-
+       
         public long Capacity => sizeState.Capacity;
 
-        public long Count => sizeState.HeaderPointer->RecordCount;
 
         public string HashTableFilePath => config.HashTableFilePath;
         public string DataFilePath => config.DataFilePath;
@@ -55,9 +41,6 @@ namespace PersistentHashing
 
         private object initializeSyncObject = new object();
         protected volatile bool isInitialized;
-
-       
-
 
         public AbstractDynamicStore(string filePathWithoutExtension, long initialCapacity, BaseHashTableOptions<TKey, TValue> options)
         {
@@ -80,31 +63,29 @@ namespace PersistentHashing
             // we want a MaxLoadFactor = Capacity/SlotCount = 80% this is why we set SlotCount = capacity + capacity/4 => 4 * slotCount = 5 * capacity => capacity/SlotCount = 4/5 = 80%
             sizeState.SlotCount = Math.Max(initialCapacity + initialCapacity / 4, 32);
             sizeState.SlotCount = Bits.IsPowerOfTwo(sizeState.SlotCount) ? sizeState.SlotCount : Bits.NextPowerOf2(sizeState.SlotCount);
+            sizeState.OverflowAreaLength = (int)Math.Min(sizeState.SlotCount, 256);
+            sizeState.TotalSlotCount = sizeState.SlotCount + sizeState.OverflowAreaLength;
         }
 
         protected virtual void Initialize()
         {
 
-            long initialFileSize = (long)sizeof(StaticHashTableFileHeader) + sizeState.TotalSlotCount * config.RecordSize;
+            long initialFileSize = (long)sizeof(StaticHashTableFileHeader) + sizeState.TotalSlotCount * config.RecordSize + (sizeState.TotalSlotCount * sizeof(SpinLatch) / DynamicHashTableSizeState.ChunkLength) ;
             initialFileSize += (Constants.AllocationGranularity - (initialFileSize & Constants.AllocationGranularityMask)) & Constants.AllocationGranularityMask;
             config.TableMemoryMapper = new MemoryMapper(config.HashTableFilePath, initialFileSize);
-            config.TableMappingSession = config.TableMemoryMapper.OpenSession();
 
-            sizeState.TableFileBaseAddress = config.TableMappingSession.GetBaseAddress();
-            sizeState.HeaderPointer = (StaticHashTableFileHeader*)sizeState.TableFileBaseAddress;
+            var headerPointer = (StaticHashTableFileHeader*)config.TableMemoryMapper.mapping.GetBaseAddress();
 
-            if (config.IsNew) InitializeHeader();
+            if (config.IsNew) InitializeHeader(headerPointer);
             else
             {
-                ValidateHeader();
-                sizeState.SlotCount = sizeState.HeaderPointer->SlotCount;
+                ValidateHeader(headerPointer);
+                sizeState.SlotCount = headerPointer->SlotCount;
             }
-            sizeState.TablePointer = sizeState.TableFileBaseAddress + sizeof(StaticHashTableFileHeader);
-            sizeState.EndTablePointer = sizeState.TablePointer + config.RecordSize * sizeState.TotalSlotCount;
             sizeState.HashMask = sizeState.SlotCount - 1;
             sizeState.SlotBits = Bits.MostSignificantBit(sizeState.SlotCount);
-            sizeState.OverflowAreaSlotCount = (int)Math.Min(sizeState.SlotCount, 256);
-            sizeState.TotalSlotCount = sizeState.SlotCount + sizeState.OverflowAreaSlotCount;
+            sizeState.OverflowAreaLength = (int)Math.Min(sizeState.SlotCount, 256);
+            sizeState.TotalSlotCount = sizeState.SlotCount + sizeState.OverflowAreaLength;
             sizeState.Capacity = sizeState.SlotCount / 5 * 4;
 
             config.DataFile = OpenDataFile();
@@ -116,23 +97,23 @@ namespace PersistentHashing
         protected abstract DataFile OpenDataFile();
 
 
-        protected void InitializeHeader()
+        protected void InitializeHeader(StaticHashTableFileHeader* headerPointer)
         {
-            sizeState.HeaderPointer->DistanceSum = 0;
-            sizeState.HeaderPointer->Magic = StaticHashTableFileHeader.MagicNumber;
-            sizeState.HeaderPointer->MaxDistance = 0;
-            sizeState.HeaderPointer->RecordCount = 0;
-            sizeState.HeaderPointer->RecordSize = config.RecordSize;
-            sizeState.HeaderPointer->SlotCount = sizeState.SlotCount;
+            headerPointer->DistanceSum = 0;
+            headerPointer->Magic = StaticHashTableFileHeader.MagicNumber;
+            headerPointer->MaxDistance = 0;
+            headerPointer->RecordCount = 0;
+            headerPointer->RecordSize = config.RecordSize;
+            headerPointer->SlotCount = sizeState.SlotCount;
         }
 
-        protected void ValidateHeader()
+        protected void ValidateHeader(StaticHashTableFileHeader* headerPointer)
         {
-            if ( sizeState.HeaderPointer->Magic != StaticHashTableFileHeader.MagicNumber)
+            if (headerPointer->Magic != StaticHashTableFileHeader.MagicNumber)
             {
                 throw new FormatException($"This is not a {nameof(AbstractDynamicStore<TKey, TValue>)} file");
             }
-            if (sizeState.HeaderPointer->RecordSize != config.RecordSize)
+            if (headerPointer->RecordSize != config.RecordSize)
             {
                 throw new ArgumentException("Mismatched RecordSize");
             }
@@ -141,7 +122,7 @@ namespace PersistentHashing
 
         public void WarmUp()
         {
-            config.TableMappingSession.WarmUp();
+            //config.TableMappingSession.WarmUp();
         }
 
 
@@ -152,7 +133,6 @@ namespace PersistentHashing
         {
             if (IsDisposed) return;
             IsDisposed = true;
-            if (config.TableMappingSession != null) config.TableMappingSession.Dispose();
             if (config.TableMemoryMapper != null) config.TableMemoryMapper.Dispose();
             if (config.DataFile != null) config.DataFile.Dispose();
         }

@@ -63,7 +63,7 @@ namespace PersistentHashing
                 slot++;
                 bool lockTaken = false;
 #if SPINLATCH
-                SpinLatch.Enter(ref hashTable.syncObjects[slot >> hashTable.chunkBits], ref lockTaken);
+                SpinLatch.Enter(ref hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits].Locked, ref lockTaken);
 #else
                 Monitor.Enter(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits], ref lockTaken);
 #endif
@@ -79,7 +79,7 @@ namespace PersistentHashing
                 finally
                 {
 #if SPINLATCH
-                    SpinLatch.Exit(ref hashTable.syncObjects[slot >> hashTable.chunkBits]);
+                    SpinLatch.Exit(ref hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits].Locked);
 #else
                     Monitor.Exit(hashTable.config.SyncObjects[slot >> hashTable.config.ChunkBits]);
 #endif

@@ -37,18 +37,14 @@ namespace PersistentHashing
         /// <summary>
         /// The number of slots in the overflow area
         /// </summary>
-        public int OverflowAreaSlotCount;
+        public int OverflowAreaLength;
 
         public long HashMask;
         public int SlotBits;
 
-        public byte* TablePointer;
-        public byte* EndTablePointer;
-        public byte* TableFileBaseAddress;
-        public StaticHashTableFileHeader* HeaderPointer;
 
         public const long ChunkMask = 0x1F;
-        public const int ChunkSize = 32;
+        public const int ChunkLength = 32;
         public const int ChunkBits = 5;
     }
 
@@ -61,7 +57,6 @@ namespace PersistentHashing
         public IEqualityComparer<TKey> KeyComparer;
         public IEqualityComparer<TValue> ValueComparer;
         public MemoryMapper TableMemoryMapper;
-        public MemoryMappingSession TableMappingSession;
         public DataFile DataFile;
         public int RecordSize;
 

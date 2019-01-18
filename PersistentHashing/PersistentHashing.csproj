@@ -27,6 +27,10 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net472|AnyCPU'">
+    <DefineConstants>TRACE;SPINLATCH</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="System.Buffers" Version="4.5.0" />
     <PackageReference Include="System.Memory" Version="4.5.1" />
